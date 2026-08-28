@@ -1,0 +1,10 @@
+{
+  "name": "SMART DF App",
+  "description": "Sistem Monitoring Absensi Real-time SMA Darul Falah Cihampelas (SMART DF App).",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

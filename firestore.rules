@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(data) { return isSignedIn() && request.auth.uid == data.userId; }
+
+    // Students collection
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    // Attendance sessions collection
+    match /attendanceSessions/{sessionId} {
+      allow read, write: if true;
+    }
+
+    // Teachers collection
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Custom accounts
+    match /custom_accounts/{accountId} {
+      allow read, write: if true; 
+    }
+
+    // student_followups collection rules
+    match /student_followups/{followupId} {
+      allow read, write: if true;
+    }
+
+    // homeroom_monthly_recaps collection rules
+    match /homeroom_monthly_recaps/{recapId} {
+      allow read, write: if true;
+    }
+
+    // Catch all fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
