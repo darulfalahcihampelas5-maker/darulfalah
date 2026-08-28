@@ -1070,24 +1070,6 @@ const safeFirebaseAuth = async (authInstance: Auth, inputEmail: string, pass: st
   }
 };
 
-const encodeSession = (username: string, pass: string) => {
-  try {
-    return btoa(encodeURIComponent(JSON.stringify({ u: username, p: pass })));
-  } catch {
-    return '';
-  }
-};
-
-const decodeSession = (hashStr: string) => {
-  try {
-    const raw = decodeURIComponent(atob(hashStr));
-    const parsed = JSON.parse(raw);
-    return { username: parsed.u, password: parsed.p };
-  } catch {
-    return null;
-  }
-};
-
 const safeSetLocalStorage = (key: string, value: string) => {
   try {
     localStorage.setItem(key, value);
@@ -1925,37 +1907,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeDb]);
 
-  // Session hash pre-fill effect (populates username & password without auto-bypassing login page)
+  // Clean any legacy hash/query/saved credentials from URL & storage on load
   useEffect(() => {
-    const restoreSession = () => {
-      if (!window.location.hash) return;
-      
-      const hashParams = new URL(window.location.href.replace('#', '?')).searchParams;
-      let sessionB64 = hashParams.get('session');
-      if (!sessionB64) {
-        const match = window.location.hash.match(/session=([^&]+)/);
-        if (match && match[1]) {
-          sessionB64 = match[1];
-        }
-      }
-      if (!sessionB64) return;
-
-      const creds = decodeSession(sessionB64);
-      if (creds && creds.username) {
-        setAuthEmail(creds.username);
-        if (creds.password) {
-          setAuthPassword(creds.password);
-        }
-      }
-
+    try {
+      localStorage.removeItem('kaguci_saved_credentials');
+    } catch {
+      /* ignore */
+    }
+    if (window.location.hash || window.location.search) {
       try {
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.history.replaceState(null, '', window.location.pathname);
       } catch {
         window.location.hash = '';
       }
-    };
-
-    restoreSession();
+    }
   }, []);
 
   useEffect(() => {
@@ -2261,6 +2226,8 @@ export default function App() {
          
          setActiveUserCustomData(null);
          setCurrentUser(null);
+         setAuthEmail('');
+         setAuthPassword('');
          setIsLoggedIn(false);
          
          try { signOut(activeAuth); } catch { /* ignore */ }
@@ -3014,30 +2981,8 @@ export default function App() {
 
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'info' | 'error' } | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [authEmail, setAuthEmail] = useState(() => {
-    try {
-      const creds = localStorage.getItem('kaguci_saved_credentials');
-      if (creds) {
-        const parsed = JSON.parse(creds).email;
-        if (parsed) return parsed;
-      }
-    } catch {
-      /* ignore storage parse error */
-    }
-    return 'admin';
-  });
-  const [authPassword, setAuthPassword] = useState(() => {
-    try {
-      const creds = localStorage.getItem('kaguci_saved_credentials');
-      if (creds) {
-        const parsed = JSON.parse(creds).password;
-        if (parsed) return parsed;
-      }
-    } catch {
-      /* ignore storage parse error */
-    }
-    return '123456@#';
-  });
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -6561,10 +6506,6 @@ export default function App() {
                         setActiveUserCustomData(customUserData);
                         localStorage.setItem('kaguci_active_custom_user', JSON.stringify(customUserData));
                         localStorage.setItem('kaguci_has_logged_in', 'true');
-                        localStorage.setItem('kaguci_saved_credentials', JSON.stringify({
-                          email: authEmail,
-                          password: authPassword
-                        }));
 
                         if (accData.photoURL) {
                           setAvatarUrl(accData.photoURL);
@@ -6591,9 +6532,10 @@ export default function App() {
                         }
 
                         showToast('Selamat Datang Kembali! Login berhasil.', 'success');
-                        const hashVal = encodeSession(targetUsername, authPassword);
-                        if (hashVal) {
-                          window.location.hash = `session=${hashVal}`;
+                        try {
+                          window.history.replaceState(null, '', window.location.pathname);
+                        } catch {
+                          window.location.hash = '';
                         }
 
                         const greetingName = accData.fullname || targetUsername || "Pengguna";
@@ -6632,10 +6574,6 @@ export default function App() {
                           setActiveUserCustomData(customUserData);
                           localStorage.setItem('kaguci_active_custom_user', JSON.stringify(customUserData));
                           localStorage.setItem('kaguci_has_logged_in', 'true');
-                          localStorage.setItem('kaguci_saved_credentials', JSON.stringify({
-                            email: authEmail,
-                            password: authPassword
-                          }));
 
                           setCurrentUser(authUser);
                           showToast('Selamat Datang! Login berhasil.', 'success');
@@ -6693,13 +6631,19 @@ export default function App() {
                     } finally {
                       setIsAuthLoading(false);
                     }
-                  }} className="space-y-5">
+                  }} 
+                  name="login"
+                  autoComplete="on"
+                  className="space-y-5">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">USERNAME / EMAIL</label>
+                      <label htmlFor="auth-username" className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">USERNAME / EMAIL</label>
                       <div className="relative">
                         <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                         <input 
+                          id="auth-username"
+                          name="username"
                           type="text" 
+                          autoComplete="username"
                           className="w-full pl-11 pr-4 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-lg focus:ring-2 focus:ring-[#098f41] focus:border-[#098f41] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-sm" 
                           placeholder="Contoh: admin atau budi" 
                           value={authEmail}
@@ -6710,11 +6654,14 @@ export default function App() {
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">KATA SANDI</label>
+                      <label htmlFor="auth-password" className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">KATA SANDI</label>
                       <div className="relative flex items-center">
                         <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                         <input 
+                          id="auth-password"
+                          name="password"
                           type={showPassword ? 'text' : 'password'} 
+                          autoComplete="current-password"
                           className="w-full pl-11 pr-12 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-lg focus:ring-2 focus:ring-[#098f41] focus:border-[#098f41] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-lg tracking-[0.2em]" 
                           placeholder="•••••" 
                           value={authPassword}
@@ -6994,10 +6941,6 @@ export default function App() {
                           setActiveUserCustomData(customUserData);
                           localStorage.setItem('kaguci_active_custom_user', JSON.stringify(customUserData));
                           localStorage.setItem('kaguci_has_logged_in', 'true');
-                          localStorage.setItem('kaguci_saved_credentials', JSON.stringify({
-                            email: resolvedUsername,
-                            password: trimmedPassword
-                          }));
                           setProfileData((prev: typeof profileData) => ({ ...prev, ...teacherProfile }));
                           setIsLoggedIn(true);
 
@@ -7015,9 +6958,10 @@ export default function App() {
                           setAuthEmail(resolvedUsername);
                           setAuthPassword(trimmedPassword);
                           
-                          const hashVal = encodeSession(resolvedUsername, trimmedPassword);
-                          if (hashVal) {
-                            window.location.hash = `session=${hashVal}`;
+                          try {
+                            window.history.replaceState(null, '', window.location.pathname);
+                          } catch {
+                            window.location.hash = '';
                           }
                           
                           // Clean fields and close form
@@ -8310,6 +8254,8 @@ export default function App() {
 
                         setActiveUserCustomData(null);
                         setCurrentUser(null);
+                        setAuthEmail('');
+                        setAuthPassword('');
                         setIsLoggedIn(false);
 
                         try {
