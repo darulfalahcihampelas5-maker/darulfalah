@@ -378,6 +378,19 @@ function AttendanceView({
     }
   };
 
+  const requestDeleteSession = (sessionId: string) => {
+    setActionPasswordModal({
+      title: 'Autentikasi Admin: Hapus Presensi',
+      description: `Masukkan password admin untuk mengonfirmasi penghapusan data riwayat presensi kelas ${selectedClass} tanggal ${date}.`,
+      expectedPassword: 'admin',
+      onSuccess: () => {
+        handleDeleteSession(sessionId);
+      }
+    });
+    setActionPasswordInput('');
+    setActionPasswordError('');
+  };
+
   const handleShareWA = () => {
     if (!existingSession) return;
     
@@ -975,7 +988,7 @@ function AttendanceView({
                        <Pencil className="w-4 h-4" /> Edit
                     </button>
                     <button
-                       onClick={() => { if(existingSession) handleDeleteSession(existingSession.id); }}
+                       onClick={() => { if(existingSession) requestDeleteSession(existingSession.id); }}
                        className="flex-1 sm:flex-none sm:w-auto bg-white text-rose-600 border border-rose-200 px-6 py-2.5 rounded-lg font-semibold text-sm hover:bg-rose-50 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
                        <Trash2 className="w-4 h-4" /> Hapus
@@ -1680,65 +1693,80 @@ export default function App() {
       return;
     }
 
-    setIsSavingUser(true);
     const oldUsername = userToEdit.username.toLowerCase().trim();
     const newUsername = editUsername.toLowerCase().trim();
+    const targetName = userToEdit.fullname;
     const path = `custom_accounts/${newUsername}`;
-    try {
-      trackOp('write', 1);
 
-      let oldDocData: Record<string, any> = {};
-      const oldDocSnap = await getDoc(doc(dbDefault, 'custom_accounts', oldUsername));
-      if (oldDocSnap.exists()) {
-        oldDocData = oldDocSnap.data();
-      }
+    const performSave = async () => {
+      setIsSavingUser(true);
+      try {
+        trackOp('write', 1);
 
-      if (newUsername !== oldUsername) {
-        const checkDoc = await getDoc(doc(dbDefault, 'custom_accounts', newUsername));
-        if (checkDoc.exists()) {
-          showToast(`Username "${newUsername}" sudah digunakan oleh akun lain.`, 'error');
-          setIsSavingUser(false);
-          return;
+        let oldDocData: Record<string, any> = {};
+        const oldDocSnap = await getDoc(doc(dbDefault, 'custom_accounts', oldUsername));
+        if (oldDocSnap.exists()) {
+          oldDocData = oldDocSnap.data();
         }
-      }
 
-      const updatedData = {
-        ...oldDocData,
-        fullname: editFullname.trim(),
-        username: editUsername.trim(),
-        password: editPassword.trim() || oldDocData.password || userToEdit.password || '••••••••',
-        updatedAt: new Date().toISOString()
-      };
+        if (newUsername !== oldUsername) {
+          const checkDoc = await getDoc(doc(dbDefault, 'custom_accounts', newUsername));
+          if (checkDoc.exists()) {
+            showToast(`Username "${newUsername}" sudah digunakan oleh akun lain.`, 'error');
+            setIsSavingUser(false);
+            return;
+          }
+        }
 
-      await setDoc(doc(dbDefault, 'custom_accounts', newUsername), updatedData, { merge: true });
-
-      if (newUsername !== oldUsername) {
-        await deleteDoc(doc(dbDefault, 'custom_accounts', oldUsername));
-      }
-
-      // If active user was edited, update local state & storage
-      const activeUn = (activeUserCustomData?.username || '').toLowerCase().trim();
-      if (activeUn === oldUsername) {
-        const updatedCustomUser = {
-          ...activeUserCustomData,
-          username: editUsername.trim(),
+        const updatedData = {
+          ...oldDocData,
           fullname: editFullname.trim(),
-          password: editPassword.trim() || activeUserCustomData?.password
+          username: editUsername.trim(),
+          password: editPassword.trim() || oldDocData.password || userToEdit.password || '••••••••',
+          updatedAt: new Date().toISOString()
         };
-        setActiveUserCustomData(updatedCustomUser);
-        localStorage.setItem('kaguci_active_custom_user', JSON.stringify(updatedCustomUser));
-      }
 
-      showToast(`User "${editFullname.trim()}" berhasil diperbarui.`, 'success');
-      setUserToEdit(null);
-      fetchAllUsers();
-    } catch (err) {
-      console.error('Error saving edited user:', err);
-      handleFirestoreError(err, OperationType.WRITE, path);
-      showToast('Gagal memperbarui user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
-    } finally {
-      setIsSavingUser(false);
-    }
+        await setDoc(doc(dbDefault, 'custom_accounts', newUsername), updatedData, { merge: true });
+
+        if (newUsername !== oldUsername) {
+          await deleteDoc(doc(dbDefault, 'custom_accounts', oldUsername));
+        }
+
+        // If active user was edited, update local state & storage
+        const activeUn = (activeUserCustomData?.username || '').toLowerCase().trim();
+        if (activeUn === oldUsername) {
+          const updatedCustomUser = {
+            ...activeUserCustomData,
+            username: editUsername.trim(),
+            fullname: editFullname.trim(),
+            password: editPassword.trim() || activeUserCustomData?.password
+          };
+          setActiveUserCustomData(updatedCustomUser);
+          localStorage.setItem('kaguci_active_custom_user', JSON.stringify(updatedCustomUser));
+        }
+
+        showToast(`User "${editFullname.trim()}" berhasil diperbarui.`, 'success');
+        setUserToEdit(null);
+        fetchAllUsers();
+      } catch (err) {
+        console.error('Error saving edited user:', err);
+        handleFirestoreError(err, OperationType.WRITE, path);
+        showToast('Gagal memperbarui user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
+      } finally {
+        setIsSavingUser(false);
+      }
+    };
+
+    setActionPasswordModal({
+      title: 'Konfirmasi Sandi Admin: Simpan Edit Akun',
+      description: `Masukkan password admin untuk memvalidasi dan menyimpan perubahan akun "${targetName}".`,
+      expectedPassword: 'admin',
+      onSuccess: () => {
+        performSave();
+      }
+    });
+    setActionPasswordInput('');
+    setActionPasswordError('');
   };
 
   const fetchAllUsers = useCallback(async () => {
@@ -1809,23 +1837,37 @@ export default function App() {
       return;
     }
 
-    setIsDeletingUser(true);
     const targetUsername = userToDelete.username.toLowerCase().trim();
     const targetFullname = userToDelete.fullname;
     const path = `custom_accounts/${targetUsername}`;
-    try {
-      trackOp('write', 1);
-      await deleteDoc(doc(dbDefault, 'custom_accounts', targetUsername));
-      showToast(`User "${targetFullname}" berhasil dihapus secara permanen.`, 'success');
-      setUserToDelete(null);
-      fetchAllUsers();
-    } catch (err) {
-      console.error('Error deleting user:', err);
-      handleFirestoreError(err, OperationType.DELETE, path);
-      showToast('Gagal menghapus user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
-    } finally {
-      setIsDeletingUser(false);
-    }
+
+    const performDelete = async () => {
+      setIsDeletingUser(true);
+      try {
+        trackOp('write', 1);
+        await deleteDoc(doc(dbDefault, 'custom_accounts', targetUsername));
+        showToast(`User "${targetFullname}" berhasil dihapus secara permanen.`, 'success');
+        setUserToDelete(null);
+        fetchAllUsers();
+      } catch (err) {
+        console.error('Error deleting user:', err);
+        handleFirestoreError(err, OperationType.DELETE, path);
+        showToast('Gagal menghapus user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
+      } finally {
+        setIsDeletingUser(false);
+      }
+    };
+
+    setActionPasswordModal({
+      title: 'Konfirmasi Sandi Admin: Hapus Akun',
+      description: `Masukkan password admin untuk mengonfirmasi penghapusan akun "${targetFullname}" (${targetUsername}) secara permanen.`,
+      expectedPassword: 'admin',
+      onSuccess: () => {
+        performDelete();
+      }
+    });
+    setActionPasswordInput('');
+    setActionPasswordError('');
   };
 
 
@@ -6293,7 +6335,7 @@ export default function App() {
 
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">
-                        {recoverySearchType === 'username' ? 'MASUKKAN USERNAME / EMAIL' : 'MASUKKAN KATA SANDI'}
+                        {recoverySearchType === 'username' ? 'MASUKKAN USERNAME' : 'MASUKKAN KATA SANDI'}
                       </label>
                       <div className="relative">
                         {recoverySearchType === 'username' ? (
@@ -6304,7 +6346,7 @@ export default function App() {
                         <input 
                           type="text" 
                           className="w-full pl-11 pr-4 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-lg focus:ring-2 focus:ring-[#098f41] focus:border-[#098f41] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-sm" 
-                          placeholder={recoverySearchType === 'username' ? 'Masukkan username / email' : 'Ketik kata sandi'} 
+                          placeholder={recoverySearchType === 'username' ? 'Masukkan username (Contoh: agan)' : 'Ketik kata sandi'} 
                           value={recoverySearchVal}
                           onChange={e => setRecoverySearchVal(e.target.value)}
                           required 
@@ -6620,7 +6662,7 @@ export default function App() {
                   autoComplete="on"
                   className="space-y-5">
                     <div>
-                      <label htmlFor="auth-username" className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">USERNAME / EMAIL</label>
+                      <label htmlFor="auth-username" className="block text-[10px] font-bold text-slate-600 mb-2 tracking-wider">USERNAME</label>
                       <div className="relative">
                         <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                         <input 
@@ -6629,7 +6671,7 @@ export default function App() {
                           type="text" 
                           autoComplete="username"
                           className="w-full pl-11 pr-4 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-lg focus:ring-2 focus:ring-[#098f41] focus:border-[#098f41] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-sm" 
-                          placeholder="Contoh: admin atau budi" 
+                          placeholder="Contoh: admin atau agan" 
                           value={authEmail}
                           onChange={e => setAuthEmail(e.target.value)}
                           required 
@@ -6729,18 +6771,18 @@ export default function App() {
                       <input 
                         type="text"
                         className="w-full px-4 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-xl focus:ring-2 focus:ring-[#098f41] focus:border-[#098f41] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-sm"
-                        placeholder="Contoh: Budi Santoso, S.Pd."
+                        placeholder="Contoh: Agan Parta, S.Kom.,Gr."
                         value={regFullName}
                         onChange={e => setRegFullName(e.target.value)}
                       />
                     </div>
 
                     <div>
-                       <label className="block text-[10px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider text-left">Username / Email Akun</label>
+                       <label className="block text-[10px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider text-left">Username Akun</label>
                        <input 
-                         type="text"
+                         type="text" 
                          className="w-full px-4 py-3 bg-[#fefce8] border-2 border-[#098f41] rounded-xl focus:ring-2 focus:ring-[#098f41] focus:border-[#077a37] transition-all outline-none text-slate-700 font-medium placeholder:text-slate-500 text-sm"
-                         placeholder="Contoh: admin atau budi"
+                         placeholder="Contoh: admin atau agan"
                          value={regUsername}
                          onChange={e => setRegUsername(e.target.value)}
                        />
@@ -7926,7 +7968,7 @@ export default function App() {
                        type="text" 
                        value={editFullname} 
                        onChange={(e) => setEditFullname(e.target.value)}
-                       placeholder="Contoh: Budi Santoso, S.Pd."
+                       placeholder="Contoh: Agan Parta, S.Kom.,Gr."
                        className="w-full bg-slate-50 border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-hidden font-bold text-slate-800 text-xs rounded-xl px-4 py-2.5 transition-all text-slate-800"
                     />
                   </div>
@@ -8504,6 +8546,13 @@ export default function App() {
                       setActionPasswordInput(e.target.value);
                       if (actionPasswordError) setActionPasswordError('');
                     }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const btn = document.getElementById('btn-confirm-action-password');
+                        if (btn) btn.click();
+                      }
+                    }}
                     placeholder={
                       actionPasswordModal.expectedPassword === 'admin' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
                         ? "Masukkan password admin" 
@@ -8540,6 +8589,7 @@ export default function App() {
                   Batal
                 </button>
                 <button 
+                  id="btn-confirm-action-password"
                   disabled={isVerifyingActionPassword || !actionPasswordInput.trim()}
                   onClick={async () => {
                     const trimmedPass = actionPasswordInput.trim();
@@ -8563,24 +8613,20 @@ export default function App() {
                       if (actionPasswordModal.expectedPassword === 'admin') {
                         isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
                       } else {
-                        isMatch = (trimmedPass === actionPasswordModal.expectedPassword.trim());
+                        isMatch = (trimmedPass === actionPasswordModal.expectedPassword.trim() || trimmedPass === '123456@#' || trimmedPass === adminPass);
                       }
                     } else {
-                      // No expectedPassword specified: standard action confirmation based on logged-in user
+                      // No expectedPassword specified: default to admin verification or logged-in account
                       const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
 
-                      if (loggedInUser === 'petugaspiket') {
-                        // Petugas piket must use admin's password
-                        isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
-                      } else if (loggedInUser === 'admin') {
-                        // Admin must use admin password
+                      if (loggedInUser === 'petugaspiket' || loggedInUser === 'admin') {
                         isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
                       } else {
-                        // Any other registered account must use their own password
                         if (activeUserCustomData?.password && trimmedPass === activeUserCustomData.password.trim()) {
                           isMatch = true;
+                        } else if (trimmedPass === '123456@#' || trimmedPass === adminPass) {
+                          isMatch = true;
                         } else {
-                          // Look up centrally
                           try {
                             const snap = await getDoc(doc(dbDefault, 'custom_accounts', loggedInUser));
                             if (snap.exists() && snap.data()?.password === trimmedPass) {
@@ -8596,7 +8642,7 @@ export default function App() {
                     setIsVerifyingActionPassword(false);
 
                     if (!isMatch) {
-                      setActionPasswordError('Sandi konfirmasi salah. Harap masukkan sandi yang tepat.');
+                      setActionPasswordError('Password Admin salah. Harap masukkan sandi admin yang valid.');
                       return;
                     }
 
@@ -8687,38 +8733,54 @@ export default function App() {
                       showToast('Kelas "' + trimmed + '" sudah terdaftar', 'error');
                       return;
                     }
-                    const updatedList = classList.map(existing => existing === classToEdit ? trimmed : existing);
-                    updatedList.sort((a,b) => a.localeCompare(b, 'id-ID', { numeric: true }));
-                    setClassList(updatedList);
-                    
-                    const updatedStudents = students.map(s => s.class === classToEdit ? { ...s, class: trimmed } : s);
-                    setStudents(updatedStudents);
-                    
-                    const updatedSessions = attendanceSessions.map(sess => sess.className === classToEdit ? { ...sess, className: trimmed } : sess);
-                    setAttendanceSessions(updatedSessions);
 
-                    if (currentUser) {
-                      const batch = writeBatch(activeDb);
-                      batch.set(doc(activeDb, 'users', currentUser.uid), { classList: updatedList }, { merge: true });
-                      
-                      updatedStudents.forEach(s => {
-                        if (s.class === trimmed) {
-                          batch.set(doc(activeDb, 'students', s.id), { class: trimmed }, { merge: true });
-                        }
-                      });
-                      
-                      updatedSessions.forEach(sess => {
-                        if (sess.className === trimmed) {
-                          batch.set(doc(activeDb, 'attendanceSessions', sess.id), { className: trimmed }, { merge: true });
-                        }
-                      });
+                    const targetOldClass = classToEdit;
 
-                      batch.commit().then(() => {
-                        showToast(`Kelas ${classToEdit} berhasil diubah menjadi ${trimmed}`, 'success');
-                      }).catch(e => console.error(e));
-                    }
-                    setClassToEdit(null);
-                    setNewClassNameInput('');
+                    const performSaveClass = () => {
+                      const updatedList = classList.map(existing => existing === targetOldClass ? trimmed : existing);
+                      updatedList.sort((a,b) => a.localeCompare(b, 'id-ID', { numeric: true }));
+                      setClassList(updatedList);
+                      
+                      const updatedStudents = students.map(s => s.class === targetOldClass ? { ...s, class: trimmed } : s);
+                      setStudents(updatedStudents);
+                      
+                      const updatedSessions = attendanceSessions.map(sess => sess.className === targetOldClass ? { ...sess, className: trimmed } : sess);
+                      setAttendanceSessions(updatedSessions);
+
+                      if (currentUser) {
+                        const batch = writeBatch(activeDb);
+                        batch.set(doc(activeDb, 'users', currentUser.uid), { classList: updatedList }, { merge: true });
+                        
+                        updatedStudents.forEach(s => {
+                          if (s.class === trimmed) {
+                            batch.set(doc(activeDb, 'students', s.id), { class: trimmed }, { merge: true });
+                          }
+                        });
+                        
+                        updatedSessions.forEach(sess => {
+                          if (sess.className === trimmed) {
+                            batch.set(doc(activeDb, 'attendanceSessions', sess.id), { className: trimmed }, { merge: true });
+                          }
+                        });
+
+                        batch.commit().then(() => {
+                          showToast(`Kelas ${targetOldClass} berhasil diubah menjadi ${trimmed}`, 'success');
+                        }).catch(e => console.error(e));
+                      }
+                      setClassToEdit(null);
+                      setNewClassNameInput('');
+                    };
+
+                    setActionPasswordModal({
+                      title: 'Autentikasi Admin: Edit Nama Kelas',
+                      description: `Masukkan password admin untuk mengubah nama kelas "${targetOldClass}" menjadi "${trimmed}".`,
+                      expectedPassword: 'admin',
+                      onSuccess: () => {
+                        performSaveClass();
+                      }
+                    });
+                    setActionPasswordInput('');
+                    setActionPasswordError('');
                   }}
                   className="flex-1 px-5 py-3 rounded-xl font-bold text-white bg-[#098f41] hover:bg-[#077a37] shadow-[0_4px_12px_rgba(9,143,65,0.3)] transition-all text-xs text-center cursor-pointer"
                 >
@@ -8769,27 +8831,41 @@ export default function App() {
                 <button 
                   onClick={() => {
                     const cName = classToDelete.name;
-                    const updatedList = classList.filter(existing => existing !== cName);
-                    setClassList(updatedList);
-                    
-                    const updatedStudents = students.map(s => s.class === cName ? { ...s, class: '' } : s);
-                    setStudents(updatedStudents);
 
-                    if (currentUser) {
-                      const batch = writeBatch(activeDb);
-                      batch.set(doc(activeDb, 'users', currentUser.uid), { classList: updatedList }, { merge: true });
+                    const performDeleteClass = () => {
+                      const updatedList = classList.filter(existing => existing !== cName);
+                      setClassList(updatedList);
                       
-                      students.forEach(s => {
-                        if (s.class === cName) {
-                          batch.set(doc(activeDb, 'students', s.id), { class: '' }, { merge: true });
-                        }
-                      });
+                      const updatedStudents = students.map(s => s.class === cName ? { ...s, class: '' } : s);
+                      setStudents(updatedStudents);
 
-                      batch.commit()
-                        .then(() => showToast(`Kelas ${cName} berhasil dihapus`, 'success'))
-                        .catch(e => console.error(e));
-                    }
-                    setClassToDelete(null);
+                      if (currentUser) {
+                        const batch = writeBatch(activeDb);
+                        batch.set(doc(activeDb, 'users', currentUser.uid), { classList: updatedList }, { merge: true });
+                        
+                        students.forEach(s => {
+                          if (s.class === cName) {
+                            batch.set(doc(activeDb, 'students', s.id), { class: '' }, { merge: true });
+                          }
+                        });
+
+                        batch.commit()
+                          .then(() => showToast(`Kelas ${cName} berhasil dihapus`, 'success'))
+                          .catch(e => console.error(e));
+                      }
+                      setClassToDelete(null);
+                    };
+
+                    setActionPasswordModal({
+                      title: 'Autentikasi Admin: Hapus Kelas',
+                      description: `Masukkan password admin untuk mengonfirmasi penghapusan kelas "${cName}".`,
+                      expectedPassword: 'admin',
+                      onSuccess: () => {
+                        performDeleteClass();
+                      }
+                    });
+                    setActionPasswordInput('');
+                    setActionPasswordError('');
                   }}
                   className="flex-1 px-5 py-3 rounded-xl font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-[0_4px_12px_rgba(225,29,72,0.3)] transition-all text-xs text-center cursor-pointer"
                 >
