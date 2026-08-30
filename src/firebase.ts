@@ -81,7 +81,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     errorMessage.toLowerCase().includes('sync background') ||
     errorMessage.toLowerCase().includes('background sync')
   ) {
-    console.warn('Firestore transient notice:', errorMessage);
     return;
   }
 

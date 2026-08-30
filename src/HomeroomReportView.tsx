@@ -2031,7 +2031,7 @@ export default function HomeroomReportView({
                       const uniqueMuridsInRow = allNamesInRow.length > 0 ? allNamesInRow.length : totalKasus;
 
                       return (
-                        <tr key={recap.id} className="hover:bg-slate-50/80 transition-colors">
+                        <tr key={recap.id || `recap-${index}`} className="hover:bg-slate-50/80 transition-colors">
                           <td className="px-3 py-3 text-center font-bold text-slate-500">{index + 1}</td>
                           <td className="px-3 py-3 font-bold text-slate-800">
                             <div>{recap.month}</div>
@@ -2188,7 +2188,7 @@ export default function HomeroomReportView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {savedReports.map((report) => {
+                    {savedReports.map((report, rIdx) => {
                       let absenInfo = '-';
                       const studentStat = priorityStudents.find(s => s.student.id === report.studentId);
                       if (studentStat) {
@@ -2196,7 +2196,7 @@ export default function HomeroomReportView({
                       }
                       
                       return (
-                      <tr key={report.id} className={`hover:bg-slate-50 transition-colors group ${printSelection !== 'all' && printSelection !== report.id ? 'print:hidden' : ''}`}>
+                      <tr key={report.id || `report-${rIdx}`} className={`hover:bg-slate-50 transition-colors group ${printSelection !== 'all' && printSelection !== report.id ? 'print:hidden' : ''}`}>
                         <td className="px-4 py-3 text-xs text-slate-700 font-semibold whitespace-nowrap">
                           {report.date ? new Date(report.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
                         </td>
@@ -2292,8 +2292,8 @@ export default function HomeroomReportView({
                     <option value="all">Cetak Semua Siswa Tercatat</option>
                     {savedReports.length > 0 && (
                       <optgroup label="Cetak Per Siswa">
-                        {savedReports.map(r => (
-                          <option key={r.id} value={r.id!}>{r.studentName}</option>
+                        {savedReports.map((r, rOptIdx) => (
+                          <option key={r.id || `rep-opt-${rOptIdx}`} value={r.id || `rep-${rOptIdx}`}>{r.studentName}</option>
                         ))}
                       </optgroup>
                     )}

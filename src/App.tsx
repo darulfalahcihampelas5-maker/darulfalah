@@ -1464,7 +1464,7 @@ export default function App() {
             dailyUsageDate: newInfo.currentDateFormatted,
             dailyUsageTime: newInfo.currentTimeStr,
             dailyUsageLastReset: newInfo.currentTimeStr
-          }, { merge: true }).catch(err => console.warn('Reset sync to custom_accounts error:', err));
+          }, { merge: true }).catch(() => {});
         }
       }
     }, 1000);
@@ -1486,7 +1486,7 @@ export default function App() {
           dailyUsageCycle: current.cycleKey,
           dailyUsageDate: current.currentDateFormatted,
           dailyUsageTime: current.currentTimeStr
-        }, { merge: true }).catch(err => console.warn('Failed syncing usage', err));
+        }, { merge: true }).catch(() => {});
       }
     }, 15000); // 15s flush
     return () => clearInterval(interval);
@@ -1560,7 +1560,6 @@ export default function App() {
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       if (isAuthLoading) {
-        console.warn("Safety timeout triggered: Firebase Auth initialization took too long. Forcing load completion.");
         setIsAuthLoading(false);
         setMinSplashTimeElapsed(true);
       }
@@ -1620,28 +1619,6 @@ export default function App() {
       setShowHomeroomRoleAlert(true);
     }
   }, [profileData.role]);
-
-  const hasWelcomedRef = useRef(false);
-
-  useEffect(() => {
-    if (isLoggedIn && !isAuthLoading) {
-      const cleanUser = (activeUserCustomData?.username || 'user').toLowerCase().trim();
-      const sessionKey = `kaguci_welcomed_${cleanUser}`;
-      const sessionWelcomed = sessionStorage.getItem(sessionKey);
-      
-      if (!sessionWelcomed && !hasWelcomedRef.current) {
-        hasWelcomedRef.current = true;
-        sessionStorage.setItem(sessionKey, 'true');
-        const dashboardUserName = (activeUserCustomData?.fullname || profileData?.namaGuruMapel || activeUserCustomData?.username || '').trim();
-        const phrase = dashboardUserName 
-          ? `Selamat datang ${dashboardUserName} di aplikasi SMART DF App.`
-          : `Selamat datang di aplikasi SMART DF App.`;
-        speakText(phrase);
-      }
-    } else if (!isLoggedIn) {
-      hasWelcomedRef.current = false;
-    }
-  }, [isLoggedIn, isAuthLoading, activeUserCustomData, profileData]);
 
   useEffect(() => {
     if (isLoggedIn && activeUserCustomData?.username && profileData) {
@@ -2039,7 +2016,7 @@ export default function App() {
                 setProfileData((prev: typeof profileData) => ({ ...prev, ...flatProfile }));
               }
             }
-          }).catch(err => console.warn('Gagal membaca sinkronisasi metadata dari portal pusat:', err));
+          }).catch(() => {});
         }
 
         // Async fetch avatar and classList from Firestore without blocking auth state resolution
@@ -2095,8 +2072,7 @@ export default function App() {
             }
           }
           setClassListLoaded(true);
-        }).catch(error => {
-          console.warn('Failed to fetch user document or profile on auth state change:', error);
+        }).catch(() => {
           setClassListLoaded(true);
         });
         setIsAuthLoading(false);
@@ -2152,8 +2128,8 @@ export default function App() {
               setIsAuthLoading(false);
               return;
             }
-          } catch (e) {
-            console.warn("Error restoring session:", e);
+          } catch {
+            // silent ignore fallback
           }
         }
 
@@ -2233,7 +2209,7 @@ export default function App() {
           usages.sort((a, b) => b.reads - a.reads);
           setAllUsersUsage(usages);
         })
-        .catch(err => console.warn("Failed caching usage", err))
+        .catch(() => {})
         .finally(() => setIsLoadingUsage(false));
     }
   }, [activeTab, isLoggedIn, cycleInfo.cycleKey, trackOp]);
@@ -2273,12 +2249,11 @@ export default function App() {
       // Only proceed if confirmed by server with no pending local writes, and after at least 5s of session
       const timeSinceLogin = Date.now() - loginTimestampRef.current;
       if (!docSnap.metadata.fromCache && !docSnap.metadata.hasPendingWrites && !docSnap.exists() && timeSinceLogin > 5000) {
-         console.warn("User account no longer exists in database! Forcing logout.");
-         
          // 1. Cleared all stored credentials
          localStorage.removeItem(`kaguci_profile_${usernameKey}`);
          localStorage.removeItem(`kaguci_avatar_${usernameKey}`);
          sessionStorage.removeItem(`kaguci_welcomed_${usernameKey}`);
+         sessionStorage.removeItem('kaguci_welcomed_session');
          localStorage.removeItem('kaguci_active_custom_user');
          localStorage.removeItem('kaguci_saved_credentials');
          localStorage.removeItem('kaguci_has_logged_in');
@@ -2296,8 +2271,8 @@ export default function App() {
          
          setAccountDeletedAlert(true);
       }
-    }, (error) => {
-      console.warn("Account monitor snapshot warning:", error);
+    }, () => {
+      // ignore snapshot error
     });
 
     return () => unsubscribe();
@@ -3167,8 +3142,8 @@ export default function App() {
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
-      } catch (err) {
-        console.warn('Init default admin notice:', err);
+      } catch {
+        // silent ignore
       }
     };
     initDefaultAdmin();
@@ -3683,7 +3658,7 @@ export default function App() {
         if (currentUser) {
           setDoc(doc(activeDb, 'users', currentUser.uid), {
             classWaliMap: updatedWaliMap
-          }, { merge: true }).catch(err => console.warn('Failed to save classWaliMap:', err));
+          }, { merge: true }).catch(() => {});
         }
 
       }
@@ -3698,7 +3673,7 @@ export default function App() {
         if (currentUser) {
           setDoc(doc(activeDb, 'users', currentUser.uid), {
             classWaliNiyMap: updatedWaliNiyMap
-          }, { merge: true }).catch(err => console.warn('Failed to save classWaliNiyMap:', err));
+          }, { merge: true }).catch(() => {});
         }
 
       }
@@ -5586,7 +5561,7 @@ export default function App() {
                             </tr>
                           ) : allUsersUsage.length > 0 ? (
                             allUsersUsage.map((usage, idx) => (
-                              <tr key={usage.username} className={`border-b border-slate-50 last:border-none ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                              <tr key={`${usage.username}-${idx}`} className={`border-b border-slate-50 last:border-none ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
                                 <td className="px-4 py-3">
                                   <div className="text-sm font-bold text-slate-800">{usage.fullname}</div>
                                   <div className="text-[10px] font-medium text-slate-500">{usage.username}</div>
@@ -5815,7 +5790,7 @@ export default function App() {
                               {allUsers.map((u, idx) => {
                                 const isSelf = u.username.toLowerCase().trim() === activeUserCustomData?.username?.toLowerCase().trim();
                                 return (
-                                  <tr key={u.id} className={`hover:bg-slate-100/40 transition-colors ${isSelf ? 'bg-emerald-50/30 font-semibold text-[#077a37]' : 'text-slate-700'}`}>
+                                  <tr key={u.id || `${u.username}-${idx}`} className={`hover:bg-slate-100/40 transition-colors ${isSelf ? 'bg-emerald-50/30 font-semibold text-[#077a37]' : 'text-slate-700'}`}>
                                     <td className="px-4 py-3 text-xs text-slate-500 font-mono text-center">{idx + 1}</td>
                                     <td className="px-4 py-3 text-xs font-semibold">
                                       <div className="flex flex-col gap-1.5">
@@ -6446,7 +6421,7 @@ export default function App() {
                           <div>
                             <span className="block text-[10px] font-bold text-[#098f41] mb-2 uppercase">✓ Kredensial Ditemukan</span>
                             {recoveryResult.map((acc, index) => (
-                              <div key={index} className="space-y-2 border-t border-slate-200 pt-2 first:border-0 first:pt-0">
+                              <div key={`rec-${acc.username || index}`} className="space-y-2 border-t border-slate-200 pt-2 first:border-0 first:pt-0">
                                 <div>
                                   <span className="text-[9px] font-bold text-slate-500 block">NAMA LENGKAP</span>
                                   <span className="text-xs font-bold text-slate-800">{acc.fullname}</span>
@@ -6501,6 +6476,12 @@ export default function App() {
 
                   <form onSubmit={async (e) => { 
                     e.preventDefault(); 
+                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                      const silent = new SpeechSynthesisUtterance('');
+                      silent.volume = 0;
+                      window.speechSynthesis.speak(silent);
+                      window.speechSynthesis.cancel();
+                    }
                     setIsAuthLoading(true);
 
                     try {
@@ -6569,8 +6550,8 @@ export default function App() {
                                 lookupDoc = qPrefixSnap.docs[0];
                               }
                             }
-                          } catch (qErr) {
-                            console.warn("Query fallback error:", qErr);
+                          } catch {
+                            // silent query fallback
                           }
                         }
                       }
@@ -6640,8 +6621,9 @@ export default function App() {
 
                         const greetingName = (accData.fullname || profileData?.namaGuruMapel || targetUsername || "Pengguna").trim();
                         const phrase = `Selamat datang ${greetingName} di aplikasi SMART DF App.`;
-                        sessionStorage.setItem(`kaguci_welcomed_${targetUsername.toLowerCase().trim()}`, 'true');
-                        hasWelcomedRef.current = true;
+                        const cleanUser = targetUsername.toLowerCase().trim();
+                        sessionStorage.setItem(`kaguci_welcomed_${cleanUser}`, 'true');
+                        sessionStorage.setItem('kaguci_welcomed_session', 'true');
                         speakText(phrase);
 
                         setIsLoggedIn(true);
@@ -6661,9 +6643,7 @@ export default function App() {
                         username: authEmail
                       });
                       setIsAuthLoading(false);
-                    } catch (error) {
-                      const err = error as Error;
-                      console.warn("Login error:", err);
+                    } catch {
                       setLoginError({
                         title: 'Gagal Masuk',
                         message: 'Maaf username atau password yang anda masukkan salah',
@@ -6986,6 +6966,9 @@ export default function App() {
                           setActiveUserCustomData(customUserData);
                           localStorage.setItem('kaguci_active_custom_user', JSON.stringify(customUserData));
                           localStorage.setItem('kaguci_has_logged_in', 'true');
+                          const cleanRegUser = resolvedUsername.toLowerCase().trim();
+                          sessionStorage.setItem(`kaguci_welcomed_${cleanRegUser}`, 'true');
+                          sessionStorage.setItem('kaguci_welcomed_session', 'true');
                           setProfileData((prev: typeof profileData) => ({ ...prev, ...teacherProfile }));
                           setIsLoggedIn(true);
 
@@ -7216,7 +7199,7 @@ export default function App() {
                     <strong className="block mb-2 font-black text-rose-800 text-[11px] uppercase tracking-wider">Rekomendasi Solusi & Navigasi:</strong>
                     <ul className="list-disc pl-4 space-y-2 text-[11px] text-slate-600">
                       {loginError.recommendations.map((rec, idx) => (
-                        <li key={idx} className="leading-snug">
+                        <li key={`login-rec-${idx}`} className="leading-snug">
                           {rec}
                         </li>
                       ))}
@@ -8169,7 +8152,7 @@ export default function App() {
                             <p className="text-[10px] font-black text-slate-600 uppercase tracking-wider">Riwayat Log / Catatan Pemeriksaan:</p>
                             <div className="max-h-24 overflow-y-auto rounded-xl bg-slate-50 border-2 border-slate-300/50 p-2 text-[11px] text-slate-600 font-medium space-y-1">
                               {importResult.details.map((detail, idx) => (
-                                <div key={idx} className="flex gap-1 items-start">
+                                <div key={`imp-detail-${idx}`} className="flex gap-1 items-start">
                                   <span className="shrink-0 text-slate-500">•</span>
                                   <span>{detail}</span>
                                 </div>
@@ -8219,7 +8202,7 @@ export default function App() {
                             <p className="text-[10px] font-black text-slate-600 uppercase tracking-wider">Daftar Lembar Kerja (Sheets) Terbaca:</p>
                             <div className="max-h-24 overflow-y-auto rounded-xl border border-slate-100/80 bg-slate-50/50 p-2 divide-y divide-slate-100 text-xs">
                               {importResult.sheetsProcessed.map((sh, idx) => (
-                                <div key={idx} className="flex justify-between py-1.5 px-1 font-bold text-slate-600 first:pt-0 last:pb-0">
+                                <div key={`imp-sh-${sh.name || idx}`} className="flex justify-between py-1.5 px-1 font-bold text-slate-600 first:pt-0 last:pb-0">
                                   <span className="truncate pr-2">📄 {sh.name}</span>
                                   <span className="text-[#098f41] shrink-0 font-black">{sh.count} siswa</span>
                                 </div>
@@ -8233,7 +8216,7 @@ export default function App() {
                             <p className="text-[10px] font-black text-slate-600 uppercase tracking-wider font-sans">Log Baris Dilewati / Bermasalah:</p>
                             <div className="max-h-24 overflow-y-auto rounded-xl bg-rose-50/50 border border-rose-100/60 p-2 text-[11px] text-rose-700 font-medium space-y-1 font-sans">
                               {importResult.details.map((detail, idx) => (
-                                <div key={idx} className="flex gap-1 items-start">
+                                <div key={`imp-err-${idx}`} className="flex gap-1 items-start">
                                   <span className="shrink-0">•</span>
                                   <span>{detail}</span>
                                 </div>
@@ -8294,10 +8277,12 @@ export default function App() {
                         speakText("Anda Telah Keluar Dari Aplikasi");
 
                         if (activeUserCustomData?.username) {
-                          localStorage.removeItem(`kaguci_profile_${activeUserCustomData.username.toLowerCase()}`);
-                          localStorage.removeItem(`kaguci_avatar_${activeUserCustomData.username.toLowerCase()}`);
-                          sessionStorage.removeItem(`kaguci_welcomed_${activeUserCustomData.username}`);
+                          const cleanUser = activeUserCustomData.username.toLowerCase().trim();
+                          localStorage.removeItem(`kaguci_profile_${cleanUser}`);
+                          localStorage.removeItem(`kaguci_avatar_${cleanUser}`);
+                          sessionStorage.removeItem(`kaguci_welcomed_${cleanUser}`);
                         }
+                        sessionStorage.removeItem('kaguci_welcomed_session');
                         localStorage.removeItem('kaguci_active_custom_user');
                         localStorage.removeItem('kaguci_saved_credentials');
                         localStorage.removeItem('kaguci_has_logged_in');
