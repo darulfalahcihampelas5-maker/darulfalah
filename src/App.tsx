@@ -3128,10 +3128,10 @@ export default function App() {
       setRegistrationResult({
         success: true,
         title: 'Pendaftaran Akun Berhasil!',
-        message: 'Akun Administrator baru Anda siap digunakan dengan Cloud Database FRESH secara instan.',
+        message: 'Akun Administrator baru Anda siap digunakan dengan Cloud Database SMART DF secara instan.',
         fullname: configData.fullname,
         username: resolvedUsername,
-        projectId: 'Database Pusat Default FRESH'
+        projectId: 'Database Pusat SMART DF'
       });
 
       // Autofill login credentials for easy access
@@ -6510,7 +6510,7 @@ export default function App() {
                         if (accData.password && accData.password !== authPassword && !isDefaultAdmin && !isDefaultPiket) {
                           setLoginError({
                             title: 'Kata Sandi Salah!',
-                            message: `Akun "${rawInput}" terdaftar di sistem FRESH, namun kata sandi yang Anda masukkan salah.`,
+                            message: `Akun "${rawInput}" terdaftar di sistem SMART DF, namun kata sandi yang Anda masukkan salah.`,
                             recommendations: [
                               'Periksa kembali penulisan kata sandi Anda (pastikan huruf besar/kecil prasyarat Caps Lock sudah tepat).',
                               'Gunakan fitur Lupa Akun / Kata Sandi di bawah jika Anda lupa.'
@@ -6817,7 +6817,7 @@ export default function App() {
                       </div>
                       <div className="p-4 bg-emerald-50/50 border border-lime-100/50 rounded-2xl space-y-2 text-left">
                         <p className="text-[11px] text-slate-600 leading-relaxed font-semibold">
-                          Sistem akan mendaftarkan akun Anda secara langsung ke Database Pusat FRESH. Semua data presensi, absensi suara, dan data siswa akan aman terenkripsi dan disinkronkan secara otomatis.
+                          Sistem akan mendaftarkan akun Anda secara langsung ke Database Pusat SMART DF. Semua data presensi, absensi suara, dan data siswa akan aman terenkripsi dan disinkronkan secara otomatis.
                         </p>
                       </div>
                     </div>
@@ -6974,10 +6974,10 @@ export default function App() {
                           setRegistrationResult({
                             success: true,
                             title: 'Pendaftaran Akun Berhasil!',
-                            message: 'Akun Pengajar Anda siap digunakan dengan Cloud Database terpusat FRESH secara aman dan instan.',
+                            message: 'Akun Pengajar Anda siap digunakan dengan Cloud Database terpusat SMART DF secara aman dan instan.',
                             fullname: trimmedFullName,
                             username: resolvedUsername,
-                            projectId: 'Database Terpusat FRESH'
+                            projectId: 'Database Terpusat SMART DF'
                           });
 
                           // Autofill login credentials for easy access
@@ -7870,7 +7870,7 @@ export default function App() {
                   <strong className="block font-black text-rose-800 uppercase tracking-wide text-[10px]">Dampak Utama:</strong>
                   <ul className="list-disc pl-4 space-y-1 text-slate-600 text-[11px]">
                     <li>Akun ini tidak akan bisa login lagi ke sistem absensi.</li>
-                    <li>Data pengajar ini di sistem registrasi pusat FRESH akan dihapus selamanya.</li>
+                    <li>Data pengajar ini di sistem registrasi pusat SMART DF akan dihapus selamanya.</li>
                   </ul>
                 </div>
 
