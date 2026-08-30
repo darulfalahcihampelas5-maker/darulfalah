@@ -451,13 +451,13 @@ export default function HomeroomReportView({
 
       if (!waliName && students) {
         const found = students.find(s => s.class === selectedClass && s.waliKelas && s.waliKelas.trim() !== '');
-        if (found) {
+        if (found && found.waliKelas) {
           waliName = found.waliKelas.trim();
         }
       }
       if (!waliNiy && students) {
         const found = students.find(s => s.class === selectedClass && s.waliKelasNiy && s.waliKelasNiy.trim() !== '');
-        if (found) {
+        if (found && found.waliKelasNiy) {
           waliNiy = found.waliKelasNiy.trim();
         }
       }
@@ -554,7 +554,7 @@ export default function HomeroomReportView({
     return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   });
 
-  const printScope: 'all_months' | 'specific_month' = 'specific_month';
+  const [printScope] = useState<'all_months' | 'specific_month'>('specific_month');
   const [exportMonth, setExportMonth] = useState<string>(currentMonth);
 
   // Sync date range when selectedMonth changes

@@ -74,7 +74,8 @@ import {
   where,
   deleteField,
   Firestore,
-  DocumentData
+  DocumentData,
+  DocumentSnapshot
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword,
@@ -104,7 +105,7 @@ interface Student {
   userId?: string;
 }
 
-export function getWaliKelasForClass(
+function getWaliKelasForClass(
   className: string,
   classWaliMap: Record<string, string>,
   students: Student[]
@@ -120,7 +121,7 @@ export function getWaliKelasForClass(
   return '';
 }
 
-export function getWaliKelasNiyForClass(
+function getWaliKelasNiyForClass(
   className: string,
   classWaliNiyMap: Record<string, string>,
   students: Student[],
@@ -144,7 +145,7 @@ export function getWaliKelasNiyForClass(
   return '';
 }
 
-export function compareClass(a: string, b: string): number {
+function compareClass(a: string, b: string): number {
   const romanToInt = (s: string) => {
     const rom: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
     let num = 0;
@@ -172,7 +173,7 @@ export function compareClass(a: string, b: string): number {
   return partA.suffix.localeCompare(partB.suffix, 'id-ID', { numeric: true });
 }
 
-export function sortStudents(students: Student[]): Student[] {
+function sortStudents(students: Student[]): Student[] {
   return students.slice().sort((a, b) => {
     const classCompare = compareClass(a.class, b.class);
     if (classCompare !== 0) return classCompare;
@@ -203,8 +204,7 @@ interface AttendanceSession {
   piketTeacherName?: string;
   lastEditedByTeacherName?: string;
   lastEditedAt?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  editLogs?: any[];
+  editLogs?: Record<string, unknown>[];
 }
 
 interface CustomUser {
@@ -227,7 +227,12 @@ function AttendanceView({
   profileData,
   classWaliMap = {},
   classWaliNiyMap = {},
-  currentUser
+  currentUser,
+  activeUserCustomData,
+  isAdmin,
+  setActionPasswordModal,
+  setActionPasswordInput,
+  setActionPasswordError
 }: {
   classList: string[];
   students: Student[];
@@ -237,10 +242,22 @@ function AttendanceView({
   activeDb: Firestore;
   activeAuth: Auth;
   trackOp: (type: 'read' | 'write', count?: number) => void;
-  profileData: Record<string, unknown>;
+  profileData: any;
   classWaliMap?: Record<string, string>;
   classWaliNiyMap?: Record<string, string>;
   currentUser: User | null;
+  activeUserCustomData?: {
+    fullname: string;
+    username: string;
+    configText?: string;
+    password?: string;
+    role?: string;
+    id?: string;
+  } | null;
+  isAdmin?: boolean;
+  setActionPasswordModal?: (modal: any) => void;
+  setActionPasswordInput?: (val: string) => void;
+  setActionPasswordError?: (val: string) => void;
 }) {
   const [date, setDate] = useState(() => {
     return format(new Date(), 'yyyy-MM-dd');
@@ -298,7 +315,7 @@ function AttendanceView({
         setSelectedClass(profileData.waliKelasClass);
       }
     }
-  }, [profileData?.role, profileData?.waliKelasClass]);
+  }, [profileData?.role, profileData?.waliKelasClass, selectedClass]);
 
   // Reset selected teacher if they are not scheduled for the selected date's dutyDay
   useEffect(() => {
@@ -379,16 +396,27 @@ function AttendanceView({
   };
 
   const requestDeleteSession = (sessionId: string) => {
-    setActionPasswordModal({
-      title: 'Autentikasi Admin: Hapus Presensi',
-      description: `Masukkan password admin untuk mengonfirmasi penghapusan data riwayat presensi kelas ${selectedClass} tanggal ${date}.`,
-      expectedPassword: 'admin',
-      onSuccess: () => {
-        handleDeleteSession(sessionId);
-      }
-    });
-    setActionPasswordInput('');
-    setActionPasswordError('');
+    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+    const isPiket = loggedInUser === 'petugaspiket';
+    const isAdminUser = !!isAdmin || loggedInUser === 'admin';
+
+    if (setActionPasswordModal) {
+      setActionPasswordModal({
+        title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Hapus Presensi' : 'Konfirmasi Sandi Akun: Hapus Presensi',
+        description: isPiket
+          ? `Masukkan password admin untuk mengonfirmasi penghapusan data riwayat presensi kelas ${selectedClass} tanggal ${date}. (Akun Petugas Piket memerlukan verifikasi Admin)`
+          : isAdminUser
+          ? `Masukkan password admin untuk mengonfirmasi penghapusan data riwayat presensi kelas ${selectedClass} tanggal ${date}.`
+          : `Masukkan password akun Anda untuk mengonfirmasi penghapusan data riwayat presensi kelas ${selectedClass} tanggal ${date}.`,
+        onSuccess: () => {
+          handleDeleteSession(sessionId);
+        }
+      });
+    } else {
+      handleDeleteSession(sessionId);
+    }
+    if (setActionPasswordInput) setActionPasswordInput('');
+    if (setActionPasswordError) setActionPasswordError('');
   };
 
   const handleShareWA = () => {
@@ -503,13 +531,11 @@ function AttendanceView({
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const currentLogs = (existingSession as any)?.editLogs || [];
+    const currentLogs = (existingSession as (AttendanceSession & { editLogs?: Record<string, unknown>[] }))?.editLogs || [];
     const updatedLogs = [...currentLogs];
 
     if (existingSession) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const changesList: any[] = [];
+      const changesList: Array<{ studentName: string; oldStatus: string; newStatus: string }> = [];
       Object.keys(currentRecords).forEach(studentId => {
         const oldVal = existingSession.records?.[studentId] || 'Belum diisi';
         const newVal = currentRecords[studentId];
@@ -543,8 +569,7 @@ function AttendanceView({
       piketTeacherName?: string;
       lastEditedByTeacherName?: string;
       lastEditedAt?: string;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      editLogs?: any[];
+      editLogs?: Record<string, unknown>[];
     } = {
       id: sessionId,
       date,
@@ -569,7 +594,7 @@ function AttendanceView({
         acc[key] = val;
       }
       return acc;
-    }, {} as Record<string, unknown>) as AttendanceSession;
+    }, {} as Record<string, unknown>) as unknown as AttendanceSession;
 
     try {
       trackOp('write', 1);
@@ -1093,64 +1118,72 @@ const safeSetLocalStorage = (key: string, value: string) => {
 
 let lastSpokenText = '';
 let lastSpokenTime = 0;
+let cachedVoices: SpeechSynthesisVoice[] = [];
+
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  const loadVoices = () => {
+    try {
+      cachedVoices = window.speechSynthesis.getVoices() || [];
+    } catch {
+      // ignore
+    }
+  };
+  loadVoices();
+  if (window.speechSynthesis.onvoiceschanged !== undefined) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+}
+
+const getBestIndonesianVoice = (): SpeechSynthesisVoice | undefined => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return undefined;
+  const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
+  const indonesianVoices = voices.filter(v => {
+    const langLower = v.lang.toLowerCase();
+    return langLower.startsWith('id') || langLower.includes('id') || langLower === 'id_id';
+  });
+
+  if (indonesianVoices.length === 0) return undefined;
+
+  indonesianVoices.sort((a, b) => {
+    const score = (v: SpeechSynthesisVoice) => {
+      const nameLower = v.name.toLowerCase();
+      let pts = 0;
+      if (nameLower.includes('google')) pts += 10;
+      if (nameLower.includes('indonesia')) pts += 5;
+      if (nameLower.includes('premium') || nameLower.includes('natural')) pts += 5;
+      if (nameLower.includes('female') || nameLower.includes('wanita') || nameLower.includes('gadis')) pts += 3;
+      return pts;
+    };
+    return score(b) - score(a);
+  });
+
+  return indonesianVoices[0];
+};
 
 const speakText = (text: string) => {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const now = Date.now();
-    if (lastSpokenText === text && now - lastSpokenTime < 5000) {
+    if (lastSpokenText === text && now - lastSpokenTime < 4000) {
       return;
     }
     lastSpokenText = text;
     lastSpokenTime = now;
 
-    window.speechSynthesis.cancel();
-    
-    const startSpeaking = () => {
+    try {
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'id-ID';
-      utterance.rate = 0.95;
+      utterance.rate = 1.0;
       utterance.pitch = 1.0;
-      
-      const voices = window.speechSynthesis.getVoices();
-      
-      // Filter all Indonesian voices using multiple language code variations
-      const indonesianVoices = voices.filter(v => {
-        const langLower = v.lang.toLowerCase();
-        return langLower.startsWith('id') || langLower.includes('id') || langLower === 'id_id';
-      });
 
-      // Sort to prioritize natural premium voices (like Google Bahasa Indonesia or professional female voices)
-      indonesianVoices.sort((a, b) => {
-        const score = (v: SpeechSynthesisVoice) => {
-          const nameLower = v.name.toLowerCase();
-          let pts = 0;
-          if (nameLower.includes('google')) pts += 10;
-          if (nameLower.includes('premium') || nameLower.includes('natural')) pts += 5;
-          if (nameLower.includes('female') || nameLower.includes('wanita') || nameLower.includes('gadis')) pts += 3;
-          return pts;
-        };
-        return score(b) - score(a);
-      });
-
-      const selectedVoice = indonesianVoices[0];
+      const selectedVoice = getBestIndonesianVoice();
       if (selectedVoice) {
         utterance.voice = selectedVoice;
-        console.log(`Menggunakan suara Bahasa Indonesia: ${selectedVoice.name} (${selectedVoice.lang})`);
-      } else {
-        console.warn("Suara Bahasa Indonesia asli tidak ditemukan. Menggunakan suara sistem default.");
       }
-      
-      window.speechSynthesis.speak(utterance);
-    };
 
-    if (window.speechSynthesis.getVoices().length === 0) {
-      const handleVoicesChanged = () => {
-        startSpeaking();
-        window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
-      };
-      window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
-    } else {
-      startSpeaking();
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn("Gagal memutar speech synthesis:", e);
     }
   } else {
     console.warn("Speech Synthesis tidak didukung oleh browser ini.");
@@ -1172,7 +1205,7 @@ export interface WibCycleInfo {
   secondsLeft: number;
 }
 
-export const getWibCycleInfo = (now: Date = new Date()): WibCycleInfo => {
+const getWibCycleInfo = (now: Date = new Date()): WibCycleInfo => {
   // Convert current time to WIB (UTC+7)
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
   const wibTime = new Date(utc + (7 * 3600000));
@@ -1597,27 +1630,13 @@ export default function App() {
       const sessionWelcomed = sessionStorage.getItem(sessionKey);
       
       if (!sessionWelcomed && !hasWelcomedRef.current) {
-        const name = (profileData?.namaGuruMapel || activeUserCustomData?.fullname || activeUserCustomData?.username || "").trim();
-        if (!name) {
-          const checkTimer = setTimeout(() => {
-            const delayedName = (profileData?.namaGuruMapel || activeUserCustomData?.fullname || activeUserCustomData?.username || "").trim();
-            hasWelcomedRef.current = true;
-            sessionStorage.setItem(sessionKey, 'true');
-            const phrase = delayedName 
-              ? `Selamat datang ${delayedName} di aplikasi SMART DF App.`
-              : `Selamat datang di aplikasi SMART DF App.`;
-            speakText(phrase);
-          }, 1200);
-          return () => clearTimeout(checkTimer);
-        } else {
-          hasWelcomedRef.current = true;
-          sessionStorage.setItem(sessionKey, 'true');
-          const phrase = `Selamat datang ${name} di aplikasi SMART DF App.`;
-          const speakTimer = setTimeout(() => {
-            speakText(phrase);
-          }, 600);
-          return () => clearTimeout(speakTimer);
-        }
+        hasWelcomedRef.current = true;
+        sessionStorage.setItem(sessionKey, 'true');
+        const dashboardUserName = (activeUserCustomData?.fullname || profileData?.namaGuruMapel || activeUserCustomData?.username || '').trim();
+        const phrase = dashboardUserName 
+          ? `Selamat datang ${dashboardUserName} di aplikasi SMART DF App.`
+          : `Selamat datang di aplikasi SMART DF App.`;
+        speakText(phrase);
       }
     } else if (!isLoggedIn) {
       hasWelcomedRef.current = false;
@@ -1676,6 +1695,10 @@ export default function App() {
   const [isSavingUser, setIsSavingUser] = useState<boolean>(false);
 
   const handleEditUserClick = (user: CustomUser) => {
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat mengedit akun pengguna.', 'error');
+      return;
+    }
     setUserToEdit(user);
     setEditFullname(user.fullname || '');
     setEditPassword(user.password || '');
@@ -1683,6 +1706,10 @@ export default function App() {
   };
 
   const handleSaveEditedUser = async () => {
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat menyimpan perubahan akun pengguna.', 'error');
+      return;
+    }
     if (!userToEdit) return;
     if (!editFullname.trim()) {
       showToast('Nama Lengkap tidak boleh kosong.', 'error');
@@ -1739,6 +1766,7 @@ export default function App() {
             ...activeUserCustomData,
             username: editUsername.trim(),
             fullname: editFullname.trim(),
+            configText: activeUserCustomData?.configText || '',
             password: editPassword.trim() || activeUserCustomData?.password
           };
           setActiveUserCustomData(updatedCustomUser);
@@ -1817,7 +1845,7 @@ export default function App() {
     } finally {
       setIsLoadingUsers(false);
     }
-  }, [isAdmin, activeUserCustomData, profileData.namaGuruMapel]);
+  }, [isAdmin, activeUserCustomData, profileData.namaGuruMapel, trackOp]);
 
   useEffect(() => {
     if (isLoggedIn && isAdmin) {
@@ -1826,10 +1854,18 @@ export default function App() {
   }, [isLoggedIn, isAdmin, fetchAllUsers]);
 
   const handleDeleteUserClick = (user: CustomUser) => {
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat menghapus akun pengguna.', 'error');
+      return;
+    }
     setUserToDelete(user);
   };
 
   const handleConfirmDeleteUser = async () => {
+    if (!isAdmin) {
+      showToast('Akses ditolak: Hanya Admin yang dapat menghapus akun pengguna.', 'error');
+      return;
+    }
     if (!userToDelete) return;
 
     if (userToDelete.username.toLowerCase().trim() === 'petugaspiket') {
@@ -2200,7 +2236,7 @@ export default function App() {
         .catch(err => console.warn("Failed caching usage", err))
         .finally(() => setIsLoadingUsage(false));
     }
-  }, [activeTab, isLoggedIn, cycleInfo.cycleKey]);
+  }, [activeTab, isLoggedIn, cycleInfo.cycleKey, trackOp]);
 
   // Monitor account deletion for custom generated accounts only (with safety guards)
   const loginTimestampRef = useRef<number>(Date.now());
@@ -2265,7 +2301,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [isLoggedIn, isAuthLoading, activeUserCustomData, currentUser, activeAuth]);
+  }, [isLoggedIn, isAuthLoading, activeUserCustomData, currentUser, activeAuth, trackOp]);
 
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState(false);
@@ -2529,9 +2565,17 @@ export default function App() {
   const [showActionPassword, setShowActionPassword] = useState(false);
 
   const requestEditStudent = (student: Student) => {
+    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+    const isPiket = loggedInUser === 'petugaspiket';
+    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
     setActionPasswordModal({
-      title: 'Autentikasi Admin: Edit Siswa',
-      description: `Masukkan password admin default untuk mengedit data siswa "${student.name}".`,
+      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Edit Siswa' : 'Konfirmasi Sandi Akun: Edit Siswa',
+      description: isPiket
+        ? `Masukkan password admin untuk mengedit data siswa "${student.name}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+        : isAdminUser
+        ? `Masukkan password admin untuk mengedit data siswa "${student.name}".`
+        : `Masukkan password akun Anda untuk mengonfirmasi pengeditan data siswa "${student.name}".`,
       onSuccess: () => {
         handleEditStudent(student);
       }
@@ -2541,9 +2585,17 @@ export default function App() {
   };
 
   const requestDeleteStudent = (student: Student) => {
+    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+    const isPiket = loggedInUser === 'petugaspiket';
+    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
     setActionPasswordModal({
-      title: 'Autentikasi Admin: Hapus Siswa',
-      description: `Masukkan password admin default untuk menghapus data siswa "${student.name}".`,
+      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Hapus Siswa' : 'Konfirmasi Sandi Akun: Hapus Siswa',
+      description: isPiket
+        ? `Masukkan password admin untuk menghapus data siswa "${student.name}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+        : isAdminUser
+        ? `Masukkan password admin untuk menghapus data siswa "${student.name}".`
+        : `Masukkan password akun Anda untuk mengonfirmasi penghapusan data siswa "${student.name}".`,
       onSuccess: () => {
         setConfirmationAction({ type: 'delete', student });
       }
@@ -2553,9 +2605,17 @@ export default function App() {
   };
 
   const requestEditTeacher = (teacher: Teacher) => {
+    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+    const isPiket = loggedInUser === 'petugaspiket';
+    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
     setActionPasswordModal({
-      title: 'Autentikasi Admin: Edit Guru',
-      description: `Masukkan password admin default untuk mengedit data guru "${teacher.name}".`,
+      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Edit Guru' : 'Konfirmasi Sandi Akun: Edit Guru',
+      description: isPiket
+        ? `Masukkan password admin untuk mengedit data guru "${teacher.name}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+        : isAdminUser
+        ? `Masukkan password admin untuk mengedit data guru "${teacher.name}".`
+        : `Masukkan password akun Anda untuk mengonfirmasi pengeditan data guru "${teacher.name}".`,
       onSuccess: () => {
         handleEditTeacher(teacher);
       }
@@ -2565,9 +2625,17 @@ export default function App() {
   };
 
   const requestDeleteTeacher = (teacher: Teacher) => {
+    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+    const isPiket = loggedInUser === 'petugaspiket';
+    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
     setActionPasswordModal({
-      title: 'Autentikasi Admin: Hapus Guru',
-      description: `Masukkan password admin default untuk menghapus data guru "${teacher.name}".`,
+      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Hapus Guru' : 'Konfirmasi Sandi Akun: Hapus Guru',
+      description: isPiket
+        ? `Masukkan password admin untuk menghapus data guru "${teacher.name}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+        : isAdminUser
+        ? `Masukkan password admin untuk menghapus data guru "${teacher.name}".`
+        : `Masukkan password akun Anda untuk mengonfirmasi penghapusan data guru "${teacher.name}".`,
       onSuccess: () => {
         setTeacherConfirmationAction({ type: 'delete', teacher });
       }
@@ -3852,7 +3920,7 @@ export default function App() {
 
                 <div className="relative z-10 w-full sm:w-3/4">
                   <p className="text-emerald-100 text-xs sm:text-sm font-bold tracking-wider uppercase mb-1 drop-shadow-sm">
-                    Halo . {activeUserCustomData?.fullname || 'User'}
+                    Halo . {activeUserCustomData?.fullname || profileData?.namaGuruMapel || activeUserCustomData?.username || 'User'}
                   </p>
                   <h2 className="text-3xl sm:text-4xl font-black mb-3 tracking-tight leading-tight">
                     Selamat Datang di Aplikasi <span className="text-white border-b-2 border-white/40 pb-0.5">SMART DF App</span>
@@ -4785,6 +4853,11 @@ export default function App() {
             profileData={profileData}
             classWaliMap={classWaliMap}
             currentUser={currentUser}
+            activeUserCustomData={activeUserCustomData}
+            isAdmin={isAdmin}
+            setActionPasswordModal={setActionPasswordModal}
+            setActionPasswordInput={setActionPasswordInput}
+            setActionPasswordError={setActionPasswordError}
           />
         );
       case 'reports':
@@ -6509,11 +6582,12 @@ export default function App() {
                         // Verify password if stored
                         if (accData.password && accData.password !== authPassword && !isDefaultAdmin && !isDefaultPiket) {
                           setLoginError({
-                            title: 'Kata Sandi Salah!',
-                            message: `Akun "${rawInput}" terdaftar di sistem SMART DF, namun kata sandi yang Anda masukkan salah.`,
+                            title: 'Gagal Masuk',
+                            message: 'Maaf username atau password yang anda masukkan salah',
                             recommendations: [
-                              'Periksa kembali penulisan kata sandi Anda (pastikan huruf besar/kecil prasyarat Caps Lock sudah tepat).',
-                              'Gunakan fitur Lupa Akun / Kata Sandi di bawah jika Anda lupa.'
+                              'Periksa kembali penulisan username dan kata sandi Anda (pastikan huruf besar/kecil prasyarat Caps Lock sudah tepat).',
+                              'Hanya akun yang telah terdaftar secara resmi di aplikasi ini yang dapat masuk.',
+                              'Gunakan fitur Lupa Akun / Kata Sandi jika Anda lupa kata sandi.'
                             ],
                             username: rawInput
                           });
@@ -6564,9 +6638,10 @@ export default function App() {
                           window.location.hash = '';
                         }
 
-                        const greetingName = accData.fullname || targetUsername || "Pengguna";
+                        const greetingName = (accData.fullname || profileData?.namaGuruMapel || targetUsername || "Pengguna").trim();
                         const phrase = `Selamat datang ${greetingName} di aplikasi SMART DF App.`;
                         sessionStorage.setItem(`kaguci_welcomed_${targetUsername.toLowerCase().trim()}`, 'true');
+                        hasWelcomedRef.current = true;
                         speakText(phrase);
 
                         setIsLoggedIn(true);
@@ -6574,69 +6649,13 @@ export default function App() {
                         return;
                       }
 
-                      // If not found in custom_accounts, try Firebase Auth directly
-                      try {
-                        const authUser = await safeFirebaseAuth(auth, authEmail, authPassword, usernamePrefix);
-                        if (authUser && (authUser.uid || auth.currentUser)) {
-                          // Successfully authenticated! Auto-provision the custom_accounts entry
-                          const newAccountData = {
-                            fullname: authUser.displayName || rawInput,
-                            username: usernamePrefix,
-                            password: authPassword,
-                            role: 'Guru Mapel',
-                            configText: '',
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString()
-                          };
-                          await setDoc(doc(dbDefault, 'custom_accounts', usernamePrefix), newAccountData, { merge: true });
-
-                          const customUserData = {
-                            fullname: newAccountData.fullname,
-                            username: usernamePrefix,
-                            configText: '',
-                            role: newAccountData.role
-                          };
-
-                          setActiveUserCustomData(customUserData);
-                          localStorage.setItem('kaguci_active_custom_user', JSON.stringify(customUserData));
-                          localStorage.setItem('kaguci_has_logged_in', 'true');
-
-                          setCurrentUser(authUser);
-                          showToast('Selamat Datang! Login berhasil.', 'success');
-
-                          const greetingName = newAccountData.fullname || usernamePrefix;
-                          const phrase = `Selamat datang ${greetingName} di aplikasi SMART DF App.`;
-                          sessionStorage.setItem(`kaguci_welcomed_${usernamePrefix.toLowerCase().trim()}`, 'true');
-                          speakText(phrase);
-
-                          setIsLoggedIn(true);
-                          setIsAuthLoading(false);
-                          return;
-                        }
-                      } catch (fbErr) {
-                        const err = fbErr as Error;
-                        const errMsg = (err.message || '').toLowerCase();
-                        if (errMsg.includes('wrong-password') || errMsg.includes('invalid-credential') || errMsg.includes('invalid-email')) {
-                          setLoginError({
-                            title: 'Kata Sandi Salah!',
-                            message: `Username atau Email "${authEmail}" tidak cocok dengan kata sandi yang dimasukkan.`,
-                            recommendations: [
-                              'Periksa kembali penulisan kata sandi Anda.',
-                              'Pastikan Caps Lock tidak aktif saat mengetik kata sandi.'
-                            ],
-                            username: authEmail
-                          });
-                          setIsAuthLoading(false);
-                          return;
-                        }
-                      }
-
-                      // If neither found nor valid
+                      // If account is not officially registered in custom_accounts
                       setLoginError({
-                        title: 'Akun Belum Terdaftar!',
-                        message: `Username atau Email "${authEmail}" tidak terdaftar di sistem.`,
+                        title: 'Gagal Masuk',
+                        message: 'Maaf username atau password yang anda masukkan salah',
                         recommendations: [
-                          'Periksa kembali penulisan nama pengguna / email Anda (pastikan tidak ada salah ketik).',
+                          'Periksa kembali penulisan nama pengguna (username) dan kata sandi Anda.',
+                          'User yang bisa masuk ke aplikasi adalah user yang secara resmi mendaftar di aplikasi ini.',
                           'Klik tombol "Tambah Akun Baru" di bagian bawah untuk mendaftarkan akun baru.'
                         ],
                         username: authEmail
@@ -6647,10 +6666,10 @@ export default function App() {
                       console.warn("Login error:", err);
                       setLoginError({
                         title: 'Gagal Masuk',
-                        message: `Terjadi kendala saat memproses login: ${err.message}`,
+                        message: 'Maaf username atau password yang anda masukkan salah',
                         recommendations: [
                           'Periksa koneksi internet perangkat Anda.',
-                          'Muat ulang halaman ini dan coba kembali.'
+                          'Pastikan data akun Anda sudah terdaftar secara resmi di aplikasi.'
                         ],
                         username: authEmail
                       });
@@ -7577,7 +7596,11 @@ export default function App() {
 
                 <div className="space-y-1.5 pt-2">
                   <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
-                    Masukkan Password Admin:
+                    {(activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket'
+                      ? 'Masukkan Password Admin (Otorisasi Admin):'
+                      : isAdmin || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
+                      ? 'Masukkan Password Admin:'
+                      : 'Masukkan Password Akun Anda:'}
                   </label>
                   <div className="relative">
                     <input 
@@ -7588,7 +7611,11 @@ export default function App() {
                         setResetPasswordInput(e.target.value);
                         if (resetPasswordError) setResetPasswordError('');
                       }}
-                      placeholder="Masukkan password admin default"
+                      placeholder={
+                        (activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket' || isAdmin || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
+                          ? "Masukkan password admin" 
+                          : "Masukkan password akun Anda"
+                      }
                       className="w-full px-4 py-3 pr-11 bg-white border-2 border-slate-300 rounded-xl focus:outline-none focus:border-[#098f41] focus:ring-2 focus:ring-emerald-100 transition-all text-sm font-bold text-slate-800 disabled:opacity-50"
                     />
                     <button
@@ -7668,19 +7695,19 @@ export default function App() {
                       }
 
                       const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+                      const isPiket = loggedInUser === 'petugaspiket';
+                      const isAdminUser = isAdmin || loggedInUser === 'admin';
 
-                      if (loggedInUser === 'petugaspiket') {
-                        // Petugas piket must use admin's password
-                        isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
-                      } else if (loggedInUser === 'admin') {
-                        // Admin must use admin password
+                      if (isPiket || isAdminUser) {
+                        // Petugas piket and admin must use admin password
                         isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
                       } else {
-                        // Any other registered account must use their own password
+                        // Any other user must enter their own account password
                         if (activeUserCustomData?.password && trimmedPass === activeUserCustomData.password.trim()) {
                           isMatch = true;
+                        } else if (trimmedPass === '123456@#' || trimmedPass === adminPass) {
+                          isMatch = true;
                         } else {
-                          // Look up centrally
                           try {
                             const snap = await getDoc(doc(dbDefault, 'custom_accounts', loggedInUser));
                             if (snap.exists() && snap.data()?.password === trimmedPass) {
@@ -7695,7 +7722,11 @@ export default function App() {
                       setIsVerifyingPassword(false);
 
                       if (!isMatch) {
-                        setResetPasswordError('Sandi konfirmasi salah. Harap masukkan sandi yang tepat.');
+                        if (isPiket || isAdminUser) {
+                          setResetPasswordError('Password Admin salah. Harap masukkan sandi admin yang valid.');
+                        } else {
+                          setResetPasswordError('Password akun Anda salah. Harap masukkan kata sandi akun Anda yang valid.');
+                        }
                         return;
                       }
 
@@ -8531,7 +8562,9 @@ export default function App() {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
-                  {actionPasswordModal.expectedPassword === 'admin' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
+                  {(activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket'
+                    ? "Masukkan Password Admin (Otorisasi Admin):"
+                    : isAdmin || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
                     ? "Masukkan Password Admin:" 
                     : actionPasswordModal.expectedPassword 
                     ? "Masukkan Password Pengguna Baru:" 
@@ -8554,9 +8587,9 @@ export default function App() {
                       }
                     }}
                     placeholder={
-                      actionPasswordModal.expectedPassword === 'admin' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket' || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
+                      (activeUserCustomData?.username || '').toLowerCase().trim() === 'petugaspiket' || isAdmin || (activeUserCustomData?.username || '').toLowerCase().trim() === 'admin'
                         ? "Masukkan password admin" 
-                        : "Masukkan password akun"
+                        : "Masukkan password akun Anda"
                     }
                     className="w-full px-4 py-3 pr-11 bg-white border-2 border-slate-300 rounded-xl focus:outline-none focus:border-[#098f41] focus:ring-2 focus:ring-emerald-100 transition-all text-sm font-bold text-slate-800 disabled:opacity-50"
                   />
@@ -8609,32 +8642,30 @@ export default function App() {
                       console.warn('Failed to load admin password, using default.', e);
                     }
 
-                    if (actionPasswordModal.expectedPassword) {
-                      if (actionPasswordModal.expectedPassword === 'admin') {
-                        isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
-                      } else {
-                        isMatch = (trimmedPass === actionPasswordModal.expectedPassword.trim() || trimmedPass === '123456@#' || trimmedPass === adminPass);
-                      }
-                    } else {
-                      // No expectedPassword specified: default to admin verification or logged-in account
-                      const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+                    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+                    const isPiket = loggedInUser === 'petugaspiket';
+                    const isAdminUser = isAdmin || loggedInUser === 'admin';
 
-                      if (loggedInUser === 'petugaspiket' || loggedInUser === 'admin') {
-                        isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
+                    if (isPiket || isAdminUser) {
+                      // Petugas piket and admin MUST enter Admin password
+                      isMatch = (trimmedPass === '123456@#' || trimmedPass === adminPass);
+                    } else if (actionPasswordModal.expectedPassword && actionPasswordModal.expectedPassword !== 'admin') {
+                      // Specific target password check (e.g. creating/verifying specific credential)
+                      isMatch = (trimmedPass === actionPasswordModal.expectedPassword.trim() || trimmedPass === '123456@#' || trimmedPass === adminPass);
+                    } else {
+                      // Other users MUST enter their own account password
+                      if (activeUserCustomData?.password && trimmedPass === activeUserCustomData.password.trim()) {
+                        isMatch = true;
+                      } else if (trimmedPass === '123456@#' || trimmedPass === adminPass) {
+                        isMatch = true;
                       } else {
-                        if (activeUserCustomData?.password && trimmedPass === activeUserCustomData.password.trim()) {
-                          isMatch = true;
-                        } else if (trimmedPass === '123456@#' || trimmedPass === adminPass) {
-                          isMatch = true;
-                        } else {
-                          try {
-                            const snap = await getDoc(doc(dbDefault, 'custom_accounts', loggedInUser));
-                            if (snap.exists() && snap.data()?.password === trimmedPass) {
-                              isMatch = true;
-                            }
-                          } catch (err) {
-                            console.warn('Central account lookup error:', err);
+                        try {
+                          const snap = await getDoc(doc(dbDefault, 'custom_accounts', loggedInUser));
+                          if (snap.exists() && snap.data()?.password === trimmedPass) {
+                            isMatch = true;
                           }
+                        } catch (err) {
+                          console.warn('Central account lookup error:', err);
                         }
                       }
                     }
@@ -8642,7 +8673,11 @@ export default function App() {
                     setIsVerifyingActionPassword(false);
 
                     if (!isMatch) {
-                      setActionPasswordError('Password Admin salah. Harap masukkan sandi admin yang valid.');
+                      if (isPiket || isAdminUser) {
+                        setActionPasswordError('Password Admin salah. Harap masukkan sandi admin yang valid.');
+                      } else {
+                        setActionPasswordError('Password akun Anda salah. Harap masukkan kata sandi akun Anda yang valid.');
+                      }
                       return;
                     }
 
@@ -8771,10 +8806,17 @@ export default function App() {
                       setNewClassNameInput('');
                     };
 
+                    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+                    const isPiket = loggedInUser === 'petugaspiket';
+                    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
                     setActionPasswordModal({
-                      title: 'Autentikasi Admin: Edit Nama Kelas',
-                      description: `Masukkan password admin untuk mengubah nama kelas "${targetOldClass}" menjadi "${trimmed}".`,
-                      expectedPassword: 'admin',
+                      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Edit Nama Kelas' : 'Konfirmasi Sandi Akun: Edit Nama Kelas',
+                      description: isPiket
+                        ? `Masukkan password admin untuk mengubah nama kelas "${targetOldClass}" menjadi "${trimmed}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+                        : isAdminUser
+                        ? `Masukkan password admin untuk mengubah nama kelas "${targetOldClass}" menjadi "${trimmed}".`
+                        : `Masukkan password akun Anda untuk mengonfirmasi perubahan nama kelas "${targetOldClass}" menjadi "${trimmed}".`,
                       onSuccess: () => {
                         performSaveClass();
                       }
@@ -8856,10 +8898,17 @@ export default function App() {
                       setClassToDelete(null);
                     };
 
+                    const loggedInUser = (activeUserCustomData?.username || '').toLowerCase().trim();
+                    const isPiket = loggedInUser === 'petugaspiket';
+                    const isAdminUser = isAdmin || loggedInUser === 'admin';
+
                     setActionPasswordModal({
-                      title: 'Autentikasi Admin: Hapus Kelas',
-                      description: `Masukkan password admin untuk mengonfirmasi penghapusan kelas "${cName}".`,
-                      expectedPassword: 'admin',
+                      title: isPiket || isAdminUser ? 'Autentikasi Sandi Admin: Hapus Kelas' : 'Konfirmasi Sandi Akun: Hapus Kelas',
+                      description: isPiket
+                        ? `Masukkan password admin untuk mengonfirmasi penghapusan kelas "${cName}". (Akun Petugas Piket memerlukan verifikasi Admin)`
+                        : isAdminUser
+                        ? `Masukkan password admin untuk mengonfirmasi penghapusan kelas "${cName}".`
+                        : `Masukkan password akun Anda untuk mengonfirmasi penghapusan kelas "${cName}".`,
                       onSuccess: () => {
                         performDeleteClass();
                       }

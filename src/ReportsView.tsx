@@ -24,8 +24,8 @@ import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { kopSuratBase64 } from './kop-surat-b64';
 import HomeroomReportView from './HomeroomReportView';
-import SuratPanggilanModal from './SuratPanggilanModal';
-import type { Firestore } from 'firebase/firestore';
+import { SuratPanggilanModal } from './SuratPanggilanModal';
+import { doc, setDoc, type Firestore } from 'firebase/firestore';
 import type { Auth } from 'firebase/auth';
 
 type Status = 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Dispen' | '';
@@ -52,13 +52,14 @@ interface AttendanceSession {
 interface ReportsViewProps {
   classList: string[];
   students: Student[];
-  teachers?: { id: string; name: string; niy: string; }[];
+  teachers?: { id: string; name: string; niy: string; dutyDay?: string; }[];
   attendanceSessions: AttendanceSession[];
   profileData: {
     namaGuruMapel: string;
     namaKepalaSekolah: string;
     nipGuruMapel: string;
     nipKepalaSekolah: string;
+    fullname?: string;
     namaKurikulum?: string;
     nipKurikulum?: string;
     jabatanKurikulum?: string;
@@ -180,13 +181,13 @@ export default function ReportsView({
 
       if (!waliName && students) {
         const found = students.find(s => s.class === selectedClass && s.waliKelas && s.waliKelas.trim() !== '');
-        if (found) {
+        if (found && found.waliKelas) {
           waliName = found.waliKelas.trim();
         }
       }
       if (!waliNiy && students) {
         const found = students.find(s => s.class === selectedClass && s.waliKelasNiy && s.waliKelasNiy.trim() !== '');
-        if (found) {
+        if (found && found.waliKelasNiy) {
           waliNiy = found.waliKelasNiy.trim();
         }
       }
@@ -2367,7 +2368,7 @@ export default function ReportsView({
           setIsCallModalOpen(false);
           setSelectedStudentForCall(null);
         }}
-        studentData={selectedStudentForCall}
+        student={selectedStudentForCall}
         profileData={profileData}
       />
     </div>
