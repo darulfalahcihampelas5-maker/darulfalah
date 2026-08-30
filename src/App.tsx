@@ -1680,70 +1680,65 @@ export default function App() {
       return;
     }
 
-    const performSave = async () => {
-      setIsSavingUser(true);
-      const oldUsername = userToEdit.username.toLowerCase().trim();
-      const newUsername = editUsername.toLowerCase().trim();
-      const path = `custom_accounts/${newUsername}`;
-      try {
-        trackOp('write', 1);
+    setIsSavingUser(true);
+    const oldUsername = userToEdit.username.toLowerCase().trim();
+    const newUsername = editUsername.toLowerCase().trim();
+    const path = `custom_accounts/${newUsername}`;
+    try {
+      trackOp('write', 1);
 
-        let oldDocData: Record<string, any> = {};
-        const oldDocSnap = await getDoc(doc(dbDefault, 'custom_accounts', oldUsername));
-        if (oldDocSnap.exists()) {
-          oldDocData = oldDocSnap.data();
-        }
-
-        if (newUsername !== oldUsername) {
-          const checkDoc = await getDoc(doc(dbDefault, 'custom_accounts', newUsername));
-          if (checkDoc.exists()) {
-            showToast(`Username "${newUsername}" sudah digunakan oleh akun lain.`, 'error');
-            setIsSavingUser(false);
-            return;
-          }
-        }
-
-        const updatedData = {
-          ...oldDocData,
-          fullname: editFullname.trim(),
-          username: editUsername.trim(),
-          password: editPassword.trim(),
-          updatedAt: new Date().toISOString()
-        };
-
-        await setDoc(doc(dbDefault, 'custom_accounts', newUsername), updatedData, { merge: true });
-
-        if (newUsername !== oldUsername) {
-          await deleteDoc(doc(dbDefault, 'custom_accounts', oldUsername));
-        }
-
-        showToast(`User "${editFullname}" berhasil diperbarui.`, 'success');
-        setUserToEdit(null);
-        fetchAllUsers();
-      } catch (err) {
-        console.error('Error saving edited user:', err);
-        handleFirestoreError(err, OperationType.WRITE, path);
-        showToast('Gagal memperbarui user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
-      } finally {
-        setIsSavingUser(false);
+      let oldDocData: Record<string, any> = {};
+      const oldDocSnap = await getDoc(doc(dbDefault, 'custom_accounts', oldUsername));
+      if (oldDocSnap.exists()) {
+        oldDocData = oldDocSnap.data();
       }
-    };
 
-    const targetIsPiket = userToEdit.username.toLowerCase().trim() === 'petugaspiket';
-    const targetPassword = userToEdit.password || '';
+      if (newUsername !== oldUsername) {
+        const checkDoc = await getDoc(doc(dbDefault, 'custom_accounts', newUsername));
+        if (checkDoc.exists()) {
+          showToast(`Username "${newUsername}" sudah digunakan oleh akun lain.`, 'error');
+          setIsSavingUser(false);
+          return;
+        }
+      }
 
-    setActionPasswordModal({
-      title: 'Konfirmasi Sandi Edit Akun',
-      description: targetIsPiket 
-        ? 'Untuk mengedit akun Petugas Piket, wajib menggunakan konfirmasi password admin.'
-        : `Untuk mengedit akun ini, masukkan password dari pengguna tersebut ("${userToEdit.fullname}").`,
-      onSuccess: () => {
-        performSave();
-      },
-      expectedPassword: targetIsPiket ? 'admin' : targetPassword
-    });
-    setActionPasswordInput('');
-    setActionPasswordError('');
+      const updatedData = {
+        ...oldDocData,
+        fullname: editFullname.trim(),
+        username: editUsername.trim(),
+        password: editPassword.trim() || oldDocData.password || userToEdit.password || '••••••••',
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(dbDefault, 'custom_accounts', newUsername), updatedData, { merge: true });
+
+      if (newUsername !== oldUsername) {
+        await deleteDoc(doc(dbDefault, 'custom_accounts', oldUsername));
+      }
+
+      // If active user was edited, update local state & storage
+      const activeUn = (activeUserCustomData?.username || '').toLowerCase().trim();
+      if (activeUn === oldUsername) {
+        const updatedCustomUser = {
+          ...activeUserCustomData,
+          username: editUsername.trim(),
+          fullname: editFullname.trim(),
+          password: editPassword.trim() || activeUserCustomData?.password
+        };
+        setActiveUserCustomData(updatedCustomUser);
+        localStorage.setItem('kaguci_active_custom_user', JSON.stringify(updatedCustomUser));
+      }
+
+      showToast(`User "${editFullname.trim()}" berhasil diperbarui.`, 'success');
+      setUserToEdit(null);
+      fetchAllUsers();
+    } catch (err) {
+      console.error('Error saving edited user:', err);
+      handleFirestoreError(err, OperationType.WRITE, path);
+      showToast('Gagal memperbarui user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
+    } finally {
+      setIsSavingUser(false);
+    }
   };
 
   const fetchAllUsers = useCallback(async () => {
@@ -1814,34 +1809,23 @@ export default function App() {
       return;
     }
 
-    const performDelete = async () => {
-      setIsDeletingUser(true);
-      try {
-        trackOp('write', 1);
-        await deleteDoc(doc(dbDefault, 'custom_accounts', userToDelete.username.toLowerCase().trim()));
-        showToast(`User "${userToDelete.fullname}" berhasil dihapus secara permanen.`, 'success');
-        setUserToDelete(null);
-        fetchAllUsers();
-      } catch (err) {
-        console.error('Error deleting user:', err);
-        showToast('Gagal menghapus user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
-      } finally {
-        setIsDeletingUser(false);
-      }
-    };
-
-    const targetPassword = userToDelete.password || '';
-
-    setActionPasswordModal({
-      title: 'Konfirmasi Sandi Hapus Akun',
-      description: `Untuk menghapus akun ini, masukkan password dari pengguna tersebut ("${userToDelete.fullname}").`,
-      onSuccess: () => {
-        performDelete();
-      },
-      expectedPassword: targetPassword
-    });
-    setActionPasswordInput('');
-    setActionPasswordError('');
+    setIsDeletingUser(true);
+    const targetUsername = userToDelete.username.toLowerCase().trim();
+    const targetFullname = userToDelete.fullname;
+    const path = `custom_accounts/${targetUsername}`;
+    try {
+      trackOp('write', 1);
+      await deleteDoc(doc(dbDefault, 'custom_accounts', targetUsername));
+      showToast(`User "${targetFullname}" berhasil dihapus secara permanen.`, 'success');
+      setUserToDelete(null);
+      fetchAllUsers();
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      handleFirestoreError(err, OperationType.DELETE, path);
+      showToast('Gagal menghapus user: ' + (err instanceof Error ? err.message : 'Server error'), 'error');
+    } finally {
+      setIsDeletingUser(false);
+    }
   };
 
 
@@ -8481,7 +8465,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4"
           >
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
