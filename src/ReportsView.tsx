@@ -140,9 +140,10 @@ export default function ReportsView({
 }: ReportsViewProps) {
   const [activeReportFrame, setActiveReportFrame] = useState<'presensi' | 'wali_kelas'>(initialFrame);
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [reportType, setReportType] = useState<'daily' | 'monthly' | 'summary' | 'custom'>('summary');
+  const [reportType, setReportType] = useState<'daily' | 'monthly' | 'summary' | 'custom' | 'today_absent'>('summary');
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [selectedDailyDate, setSelectedDailyDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedAbsentDate, setSelectedAbsentDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-01'));
   const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [showExportSuccess, setShowExportSuccess] = useState<'excel' | 'pdf' | 'none' | 'no_data'>('none');
@@ -314,11 +315,12 @@ export default function ReportsView({
   };
 
   const getRightSignerDetails = () => {
-    if (reportType === 'daily' || reportType === 'custom') {
+    if (reportType === 'daily' || reportType === 'custom' || reportType === 'today_absent') {
       if (selectedClass !== 'all') {
         let relevantSession = null;
-        if (reportType === 'daily') {
-          const dailySess = classSessions.filter(s => s.date === selectedDailyDate && s.className === selectedClass);
+        if (reportType === 'daily' || reportType === 'today_absent') {
+          const targetDate = reportType === 'today_absent' ? format(new Date(), 'yyyy-MM-dd') : selectedDailyDate;
+          const dailySess = classSessions.filter(s => s.date === targetDate && s.className === selectedClass);
           relevantSession = dailySess[dailySess.length - 1];
         } else {
           const customSess = classSessions.filter(s => s.className === selectedClass && (!startDate || s.date >= startDate) && (!endDate || s.date <= endDate));
@@ -452,6 +454,40 @@ export default function ReportsView({
     return Array.from(new Set(classSessions.map(s => s.date))).sort().reverse();
   }, [classSessions]);
 
+  // Compute total absent students per class for the current report view
+  const classAbsentCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const targetAbsentDate = selectedAbsentDate || format(new Date(), 'yyyy-MM-dd');
+
+    let sessionsToProcess = classSessions;
+    if (reportType === 'today_absent') {
+      sessionsToProcess = classSessions.filter(s => s.date === targetAbsentDate);
+    } else if (reportType === 'daily') {
+      sessionsToProcess = classSessions.filter(s => s.date === selectedDailyDate);
+    } else if (reportType === 'monthly') {
+      sessionsToProcess = monthlySessions;
+    } else if (reportType === 'custom') {
+      sessionsToProcess = customRangeSessions;
+    }
+
+    const classStudentAbsents: Record<string, Set<string>> = {};
+    sessionsToProcess.forEach(sess => {
+      const cls = (sess.className || '').trim();
+      if (!classStudentAbsents[cls]) classStudentAbsents[cls] = new Set();
+      Object.entries(sess.records).forEach(([studentId, st]) => {
+        if (st === 'Sakit' || st === 'Izin' || st === 'Alpa' || st === 'Dispen') {
+          classStudentAbsents[cls].add(studentId);
+        }
+      });
+    });
+
+    Object.keys(classStudentAbsents).forEach(c => {
+      map[c] = classStudentAbsents[c].size;
+    });
+
+    return map;
+  }, [classSessions, monthlySessions, customRangeSessions, reportType, selectedDailyDate, selectedAbsentDate]);
+
   // Compute stats for each student to centralize logic, improve performance, and support search and filters
   const studentsWithStats = useMemo(() => {
     return classStudents.map(student => {
@@ -459,52 +495,78 @@ export default function ReportsView({
       let recentStatus = '-';
 
       if (reportType === 'summary') {
-        const studentSessions = classSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentSessions = classSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
       } else if (reportType === 'monthly') {
-        const studentMonthlySessions = monthlySessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentMonthlySessions = monthlySessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentMonthlySessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
       } else if (reportType === 'custom') {
-        const studentRangeSessions = customRangeSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentRangeSessions = customRangeSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentRangeSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
-      } else {
+      } else if (reportType === 'today_absent' || reportType === 'daily') {
+        const targetDate = reportType === 'today_absent' ? (selectedAbsentDate || format(new Date(), 'yyyy-MM-dd')) : selectedDailyDate;
         const studentDailySessions = classSessions.filter(s => 
-          s.date === selectedDailyDate && (selectedClass === 'all' ? s.className === student.class : true)
+          s.date === targetDate && ((s.className || '').trim() === (student.class || '').trim())
         );
-        const targetSession = studentDailySessions[studentDailySessions.length - 1];
-        if (targetSession) {
-          recentStatus = targetSession.records[student.id] || '-';
-        }
+        let sHadir = 0, sSakit = 0, sIzin = 0, sAlpa = 0, sDispen = 0;
+        studentDailySessions.forEach(session => {
+          const st = session.records[student.id];
+          if (st === 'Hadir') sHadir++;
+          else if (st === 'Sakit') sSakit++;
+          else if (st === 'Izin') sIzin++;
+          else if (st === 'Alpa') sAlpa++;
+          else if (st === 'Dispen') sDispen++;
+        });
 
-        const studentAllSessions = classSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const ketArr = [];
+        if (sSakit > 0) ketArr.push("Sakit");
+        if (sIzin > 0) ketArr.push("Izin");
+        if (sAlpa > 0) ketArr.push("Alpa");
+        if (sDispen > 0) ketArr.push("Dispen");
+
+        recentStatus = ketArr.length > 0 ? ketArr.join(", ") : (sHadir > 0 ? "Hadir" : (studentDailySessions.length > 0 ? "Alpa" : "-"));
+
+        const studentAllSessions = classSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentAllSessions.forEach(session => {
           const st = session.records[student.id];
           if (st === 'Hadir') hadir++;
-          if (st === 'Sakit') sakit++;
-          if (st === 'Izin') izin++;
-          if (st === 'Alpa') alpa++;
-          if (st === 'Dispen') dispen++;
+          else if (st === 'Sakit') sakit++;
+          else if (st === 'Izin') izin++;
+          else if (st === 'Alpa') alpa++;
+          else if (st === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
       }
 
@@ -516,11 +578,18 @@ export default function ReportsView({
         stats: { hadir, sakit, izin, alpa, dispen, persentase, totalRecorded, recentStatus }
       };
     });
-  }, [classStudents, reportType, classSessions, monthlySessions, customRangeSessions, selectedDailyDate, selectedClass]);
+  }, [classStudents, reportType, classSessions, monthlySessions, customRangeSessions, selectedDailyDate, selectedAbsentDate]);
 
   // Apply search query and quick status filtering
   const filteredStudents = useMemo(() => {
     let result = studentsWithStats;
+
+    if (reportType === 'today_absent') {
+      result = result.filter(s => {
+        const st = (s.stats.recentStatus || '').toLowerCase();
+        return st.includes('sakit') || st.includes('izin') || st.includes('alpa') || st.includes('dispen');
+      });
+    }
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -538,8 +607,17 @@ export default function ReportsView({
       result = result.filter(s => s.stats.sakit >= 1 || s.stats.izin >= 1);
     }
 
+    // Sort by class then by name if all classes are selected
+    if (selectedClass === 'all') {
+      result = result.slice().sort((a, b) => {
+        const classComp = compareClass(a.class, b.class);
+        if (classComp !== 0) return classComp;
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
     return result;
-  }, [studentsWithStats, searchQuery, quickFilter]);
+  }, [studentsWithStats, searchQuery, quickFilter, reportType, selectedClass]);
 
   // Apply pagination
   const paginatedStudents = useMemo(() => {
@@ -566,7 +644,7 @@ export default function ReportsView({
       let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
 
       if (reportType === 'summary') {
-        const studentSessions = classSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentSessions = classSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
@@ -576,7 +654,7 @@ export default function ReportsView({
           if (status === 'Dispen') dispen++;
         });
       } else if (reportType === 'monthly') {
-        const studentMonthlySessions = monthlySessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentMonthlySessions = monthlySessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentMonthlySessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
@@ -586,7 +664,7 @@ export default function ReportsView({
           if (status === 'Dispen') dispen++;
         });
       } else if (reportType === 'custom') {
-        const studentRangeSessions = customRangeSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+        const studentRangeSessions = customRangeSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         studentRangeSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
@@ -595,10 +673,24 @@ export default function ReportsView({
           if (status === 'Alpa') alpa++;
           if (status === 'Dispen') dispen++;
         });
+      } else if (reportType === 'today_absent') {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const studentDailySessions = classSessions.filter(s => 
+          s.date === todayStr && ((s.className || '').trim() === (student.class || '').trim())
+        );
+        const targetSession = studentDailySessions[studentDailySessions.length - 1];
+        if (targetSession) {
+          const status = targetSession.records[student.id];
+          if (status === 'Hadir') hadir++;
+          if (status === 'Sakit') sakit++;
+          if (status === 'Izin') izin++;
+          if (status === 'Alpa') alpa++;
+          if (status === 'Dispen') dispen++;
+        }
       } else {
         // daily
         const studentDailySessions = classSessions.filter(s => 
-          s.date === selectedDailyDate && (selectedClass === 'all' ? s.className === student.class : true)
+          s.date === selectedDailyDate && ((s.className || '').trim() === (student.class || '').trim())
         );
         const targetSession = studentDailySessions[studentDailySessions.length - 1];
         if (targetSession) {
@@ -795,16 +887,19 @@ export default function ReportsView({
 
     if (reportType === 'summary') {
       data = classStudents.map((student, i) => {
-        const studentSessions = classSessions.filter(s => s.className === student.class);
+        const studentSessions = classSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
 
         studentSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
 
         const totalRecorded = hadir + sakit + izin + alpa + dispen;
@@ -825,6 +920,14 @@ export default function ReportsView({
         row['Izin'] = izin;
         row['Alpa'] = alpa;
         row['Dispen'] = dispen;
+        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const ketArr = [];
+        if (sakit > 0) ketArr.push("Sakit");
+        if (izin > 0) ketArr.push("Izin");
+        if (alpa > 0) ketArr.push("Alpa");
+        if (dispen > 0) ketArr.push("Dispen");
+        row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
+        row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
         row['Presentase %'] = presentPercentage;
 
         return row;
@@ -844,15 +947,18 @@ export default function ReportsView({
         }
 
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
-        const studentMonthlySessions = monthlySessions.filter(s => s.className === student.class);
+        const studentMonthlySessions = monthlySessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
 
         studentMonthlySessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
 
         row['Hadir'] = hadir;
@@ -860,6 +966,14 @@ export default function ReportsView({
         row['Izin'] = izin;
         row['Alpa'] = alpa;
         row['Dispen'] = dispen;
+        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const ketArr = [];
+        if (sakit > 0) ketArr.push("Sakit");
+        if (izin > 0) ketArr.push("Izin");
+        if (alpa > 0) ketArr.push("Alpa");
+        if (dispen > 0) ketArr.push("Dispen");
+        row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
+        row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
         
         const totalRecordedMonthly = hadir + sakit + izin + alpa + dispen;
         const presentPercentage = totalRecordedMonthly > 0 ? Math.round(((hadir + dispen) / totalRecordedMonthly) * 100) : 0;
@@ -882,15 +996,18 @@ export default function ReportsView({
         }
 
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
-        const studentRangeSessions = customRangeSessions.filter(s => s.className === student.class);
+        const studentRangeSessions = customRangeSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
 
         studentRangeSessions.forEach(session => {
           const status = session.records[student.id];
           if (status === 'Hadir') hadir++;
-          if (status === 'Sakit') sakit++;
-          if (status === 'Izin') izin++;
-          if (status === 'Alpa') alpa++;
-          if (status === 'Dispen') dispen++;
+          else if (status === 'Sakit') sakit++;
+          else if (status === 'Izin') izin++;
+          else if (status === 'Alpa') alpa++;
+          else if (status === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
 
         row['Hadir'] = hadir;
@@ -898,6 +1015,14 @@ export default function ReportsView({
         row['Izin'] = izin;
         row['Alpa'] = alpa;
         row['Dispen'] = dispen;
+        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const ketArr = [];
+        if (sakit > 0) ketArr.push("Sakit");
+        if (izin > 0) ketArr.push("Izin");
+        if (alpa > 0) ketArr.push("Alpa");
+        if (dispen > 0) ketArr.push("Dispen");
+        row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
+        row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
         
         const totalRecordedRange = hadir + sakit + izin + alpa + dispen;
         const presentPercentage = totalRecordedRange > 0 ? Math.round(((hadir + dispen) / totalRecordedRange) * 100) : 0;
@@ -907,24 +1032,102 @@ export default function ReportsView({
       });
       fileName = `Rekap_${startDate}_sd_${endDate}_${selectedClass === 'all' ? 'Semua_Kelas' : selectedClass}`;
       sheetName = `Rekap_Rentang`.substring(0, 31);
+    } else if (reportType === 'today_absent') {
+      const targetAbsentDate = selectedAbsentDate || format(new Date(), 'yyyy-MM-dd');
+      let absentFormatted = targetAbsentDate;
+      try {
+        absentFormatted = format(parseISO(targetAbsentDate), 'EEEE, dd MMMM yyyy', { locale: id });
+      } catch {
+        absentFormatted = targetAbsentDate;
+      }
+
+      const absentStudents = classStudents.filter(student => {
+        const studentDailySessions = classSessions.filter(s => 
+          s.date === targetAbsentDate && ((s.className || '').trim() === (student.class || '').trim())
+        );
+        let sHadir = 0, sSakit = 0, sIzin = 0, sAlpa = 0, sDispen = 0;
+        studentDailySessions.forEach(session => {
+          const st = session.records[student.id];
+          if (st === 'Hadir') sHadir++;
+          else if (st === 'Sakit') sSakit++;
+          else if (st === 'Izin') sIzin++;
+          else if (st === 'Alpa') sAlpa++;
+          else if (st === 'Dispen') sDispen++;
+        });
+        const totalAbsent = sSakit + sIzin + sAlpa + sDispen;
+        return totalAbsent > 0 || (studentDailySessions.length > 0 && sHadir === 0);
+      });
+
+      data = absentStudents.map((student, i) => {
+        const studentDailySessions = classSessions.filter(s => 
+          s.date === targetAbsentDate && ((s.className || '').trim() === (student.class || '').trim())
+        );
+        let sSakit = 0, sIzin = 0, sAlpa = 0, sDispen = 0;
+        studentDailySessions.forEach(session => {
+          const st = session.records[student.id];
+          if (st === 'Sakit') sSakit++;
+          else if (st === 'Izin') sIzin++;
+          else if (st === 'Alpa') sAlpa++;
+          else if (st === 'Dispen') sDispen++;
+        });
+        const ketArr = [];
+        if (sSakit > 0) ketArr.push("Sakit");
+        if (sIzin > 0) ketArr.push("Izin");
+        if (sAlpa > 0) ketArr.push("Alpa");
+        if (sDispen > 0) ketArr.push("Dispen");
+        const status = ketArr.length > 0 ? ketArr.join(", ") : "Alpa";
+
+        const row: Record<string, string | number | boolean> = {
+          'No': i + 1,
+          'NISN': student.nisn || '-',
+          'Nama Lengkap Siswa': student.name,
+          'Kelas': student.class,
+          'Keterangan Tidak Masuk': status,
+          'Jumlah yang tidak sekolah': absentStudents.filter(s => (s.class || '').trim() === (student.class || '').trim()).length || classAbsentCountMap[(student.class || '').trim()] || 0,
+          'Tanggal': absentFormatted
+        };
+
+        return row;
+      });
+
+      fileName = `Siswa_Tidak_Masuk_${targetAbsentDate}_${selectedClass === 'all' ? 'Semua_Kelas' : selectedClass}`;
+      sheetName = `Tidak_Masuk_${targetAbsentDate}`;
     } else {
       data = classStudents.map((student, i) => {
         const studentDailySessions = classSessions.filter(
-          s => s.date === selectedDailyDate && (selectedClass === 'all' ? s.className === student.class : true)
+          s => s.date === selectedDailyDate && ((s.className || '').trim() === (student.class || '').trim())
         );
-        const targetSession = studentDailySessions[studentDailySessions.length - 1];
+        let sHadir = 0, sSakit = 0, sIzin = 0, sAlpa = 0, sDispen = 0;
+        studentDailySessions.forEach(session => {
+          const st = session.records[student.id];
+          if (st === 'Hadir') sHadir++;
+          else if (st === 'Sakit') sSakit++;
+          else if (st === 'Izin') sIzin++;
+          else if (st === 'Alpa') sAlpa++;
+          else if (st === 'Dispen') sDispen++;
+        });
+        const ketArr = [];
+        if (sSakit > 0) ketArr.push("Sakit");
+        if (sIzin > 0) ketArr.push("Izin");
+        if (sAlpa > 0) ketArr.push("Alpa");
+        if (sDispen > 0) ketArr.push("Dispen");
+        
+        const foundStatus = ketArr.length > 0 ? ketArr.join(", ") : (sHadir > 0 ? "Hadir" : (studentDailySessions.length > 0 ? "Alpa" : "-"));
 
         const studentAllSessions = classSessions.filter(
-          s => selectedClass === 'all' ? s.className === student.class : true
+          s => (s.className || '').trim() === (student.class || '').trim()
         );
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
         studentAllSessions.forEach(session => {
           const st = session.records[student.id];
           if (st === 'Hadir') hadir++;
-          if (st === 'Sakit') sakit++;
-          if (st === 'Izin') izin++;
-          if (st === 'Alpa') alpa++;
-          if (st === 'Dispen') dispen++;
+          else if (st === 'Sakit') sakit++;
+          else if (st === 'Izin') izin++;
+          else if (st === 'Alpa') alpa++;
+          else if (st === 'Dispen') dispen++;
+          else {
+            alpa++;
+          }
         });
         const totalRecordedDaily = hadir + sakit + izin + alpa + dispen;
         const presentPercentage = totalRecordedDaily > 0 ? Math.round(((hadir + dispen) / totalRecordedDaily) * 100) : 0;
@@ -939,7 +1142,8 @@ export default function ReportsView({
           row['Kelas'] = student.class;
         }
 
-        row['Status'] = targetSession ? (targetSession.records[student.id] || '-') : '-';
+        row['Keterangan Tidak Masuk'] = foundStatus;
+        row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
         row['Presentase %'] = presentPercentage;
 
         return row;
@@ -1010,31 +1214,56 @@ export default function ReportsView({
         doc.setFont("helvetica", "bold");
         doc.text('LAPORAN REKAPITULASI KEHADIRAN SISWA', pageWidth / 2, startY, { align: 'center' });
         
-        doc.setFontSize(11);
+        doc.setFontSize(10.5);
         doc.setFont("helvetica", "normal");
         // Two-Column Symmetrical Header Layout (Row 1, Row 2, Row 3)
-        const labelLeftX = 14;
-        const valLeftX = 48;
+        const leftLabelX = 14;
+        const leftColonX = 64;
+        const leftValX = 67;
 
-        const labelRightX = pageWidth - 85;
-        const valRightX = pageWidth - 50;
+        const rightLabelX = isLandscape ? pageWidth - 105 : pageWidth - 85;
+        const rightColonX = rightLabelX + 33;
+        const rightValX = rightColonX + 3;
 
-        const row1Y = startY + 10;
-        const row2Y = startY + 16;
-        const row3Y = startY + 22;
+        const row1Y = startY + 8;
+        const row2Y = startY + 14;
+        const row3Y = startY + 20;
 
-        // Row 1: Wali Kelas/Koordinator Piket (Left) | Tahun Pelajaran (Right)
-        const labelMapel = selectedClass !== 'all' ? 'Wali Kelas' : 'Koordinator Piket';
-        const valueMapel = selectedClass !== 'all' ? (customWaliKelasName || '-') : (profileData.namaGuruMapel || profileData.fullname || '-');
-        doc.text(labelMapel, labelLeftX, row1Y);
-        doc.text(`: ${valueMapel}`, valLeftX, row1Y);
+        // Row 1: Left column header (Wali Kelas / Total Siswa Tidak Masuk / Koordinator Piket) | Tahun Pelajaran (Right)
+        let labelMapel: string;
+        let valueMapel: string;
+        if (reportType === 'today_absent') {
+          labelMapel = 'Total Siswa Tidak Masuk';
+          valueMapel = `${data.length} Siswa`;
+        } else if (reportType === 'daily') {
+          labelMapel = 'Total Siswa Tidak Masuk';
+          const absentCount = data.filter((row: Record<string, unknown>) => {
+            const ket = (row['Keterangan Tidak Masuk'] || '').toString();
+            return ket && ket !== 'Hadir' && ket !== '-';
+          }).length;
+          valueMapel = `${absentCount} Siswa`;
+        } else if (selectedClass !== 'all') {
+          labelMapel = 'Wali Kelas';
+          valueMapel = customWaliKelasName || '-';
+        } else {
+          labelMapel = 'Total Siswa Tidak Masuk';
+          const absentCount = data.filter((row: Record<string, unknown>) => {
+            const ket = (row['Keterangan Tidak Masuk'] || '').toString();
+            return ket && ket !== 'Hadir' && ket !== '-';
+          }).length;
+          valueMapel = `${absentCount > 0 ? absentCount : data.length} Siswa`;
+        }
+        doc.text(labelMapel, leftLabelX, row1Y);
+        doc.text(':', leftColonX, row1Y);
+        doc.text(valueMapel, leftValX, row1Y);
 
-        doc.text(`Tahun Pelajaran`, labelRightX, row1Y);
-        doc.text(`: ${profileData.tahunPelajaran || '-'}`, valRightX, row1Y);
+        doc.text(`Tahun Pelajaran`, rightLabelX, row1Y);
+        doc.text(':', rightColonX, row1Y);
+        doc.text(`${profileData.tahunPelajaran || '-'}`, rightValX, row1Y);
 
         // Row 2: Periode (Left) | Semester (Right)
         if (reportType === 'monthly') {
-          doc.text(`Periode Bulan`, labelLeftX, row2Y);
+          doc.text(`Periode Bulan`, leftLabelX, row2Y);
           let displayMonth = selectedMonth;
           try {
             if (selectedMonth) {
@@ -1045,9 +1274,10 @@ export default function ReportsView({
           } catch (e) {
             console.error("Error formatting month:", e);
           }
-          doc.text(`: ${displayMonth}`, valLeftX, row2Y);
+          doc.text(':', leftColonX, row2Y);
+          doc.text(`${displayMonth}`, leftValX, row2Y);
         } else if (reportType === 'custom') {
-          doc.text(`Periode Tanggal`, labelLeftX, row2Y);
+          doc.text(`Periode Tanggal`, leftLabelX, row2Y);
           let startText = startDate || '-';
           let endText = endDate || '-';
           try {
@@ -1056,20 +1286,32 @@ export default function ReportsView({
           } catch (e) {
             console.error("Error formatting custom dates:", e);
           }
-          doc.text(`: ${startText} s/d ${endText}`, valLeftX, row2Y);
+          doc.text(':', leftColonX, row2Y);
+          doc.text(`${startText} s/d ${endText}`, leftValX, row2Y);
         } else if (reportType === 'daily') {
-          doc.text(`Periode Tanggal`, labelLeftX, row2Y);
+          doc.text(`Periode Tanggal`, leftLabelX, row2Y);
           let displayDate = selectedDailyDate || '-';
           try {
             if (selectedDailyDate) {
-              displayDate = format(parseISO(selectedDailyDate), 'dd MMMM yyyy', { locale: id });
+              displayDate = format(parseISO(selectedDailyDate), 'EEEE, dd MMMM yyyy', { locale: id });
             }
           } catch (e) {
             console.error("Error formatting date:", e);
           }
-          doc.text(`: ${displayDate}`, valLeftX, row2Y);
+          doc.text(':', leftColonX, row2Y);
+          doc.text(`${displayDate}`, leftValX, row2Y);
+        } else if (reportType === 'today_absent') {
+          doc.text(`Periode Tanggal`, leftLabelX, row2Y);
+          let absentFormatted = selectedAbsentDate || format(new Date(), 'yyyy-MM-dd');
+          try {
+            absentFormatted = format(parseISO(absentFormatted), 'EEEE, dd MMMM yyyy', { locale: id });
+          } catch {
+            absentFormatted = selectedAbsentDate;
+          }
+          doc.text(':', leftColonX, row2Y);
+          doc.text(`${absentFormatted}`, leftValX, row2Y);
         } else {
-          doc.text(`Periode`, labelLeftX, row2Y);
+          doc.text(`Periode`, leftLabelX, row2Y);
           let summaryDateText = 'Semua Sesi (Total)';
           if (classSessions.length > 0) {
             try {
@@ -1080,15 +1322,18 @@ export default function ReportsView({
               console.error("Error formatting summary dates:", e);
             }
           }
-          doc.text(`: ${summaryDateText}`, valLeftX, row2Y);
+          doc.text(':', leftColonX, row2Y);
+          doc.text(`${summaryDateText}`, leftValX, row2Y);
         }
 
-        doc.text(`Semester`, labelRightX, row2Y);
-        doc.text(`: ${profileData.semester || '-'}`, valRightX, row2Y);
+        doc.text(`Semester`, rightLabelX, row2Y);
+        doc.text(':', rightColonX, row2Y);
+        doc.text(`${profileData.semester || '-'}`, rightValX, row2Y);
 
         // Row 3: Kelas / Total Pertemuan
-        doc.text(`Kelas`, labelLeftX, row3Y);
-        doc.text(`: ${selectedClass === 'all' ? 'Semua Kelas' : selectedClass}`, valLeftX, row3Y);
+        doc.text(`Kelas`, leftLabelX, row3Y);
+        doc.text(':', leftColonX, row3Y);
+        doc.text(`${selectedClass === 'all' ? 'Semua Kelas' : selectedClass}`, leftValX, row3Y);
 
         const totalPertemuan = reportType === 'summary'
           ? (selectedClass === 'all' ? classSessions.length : classSessions.filter(s => s.className === selectedClass).length)
@@ -1098,14 +1343,102 @@ export default function ReportsView({
           ? (selectedClass === 'all' ? customRangeSessions.length : customRangeSessions.filter(s => s.className === selectedClass).length)
           : (selectedClass === 'all' ? classSessions.filter(s => s.date === selectedDailyDate).length : classSessions.filter(s => s.date === selectedDailyDate && s.className === selectedClass).length);
 
-        doc.text(`Total Pertemuan`, labelRightX, row3Y);
-        doc.text(`: ${totalPertemuan} Pertemuan`, valRightX, row3Y);
+        doc.text(`Total Pertemuan`, rightLabelX, row3Y);
+        doc.text(':', rightColonX, row3Y);
+        doc.text(`${totalPertemuan} Pertemuan`, rightValX, row3Y);
         
         const tableStartY = row3Y + 8;
 
-        
         const headers = Object.keys(data[0]);
-        const body = data.map(row => Object.values(row).map(val => val !== undefined && val !== null ? val.toString() : ''));
+        const nameColIndex = headers.findIndex(h => h.toLowerCase().includes('nama'));
+        const absentColIndex = headers.findIndex(h => h.toLowerCase().includes('jumlah yang tidak sekolah'));
+        const dateColIndex = headers.findIndex(h => h.toLowerCase().includes('tanggal'));
+
+        // Calculate consecutive row spans for each class group
+        const rowSpans: { isFirst: boolean; span: number; countValue: string; dateValue: string }[] = data.map(() => ({
+          isFirst: false,
+          span: 1,
+          countValue: '',
+          dateValue: ''
+        }));
+
+        let groupStart = 0;
+        while (groupStart < data.length) {
+          const currentClass = (data[groupStart]['Kelas'] || selectedClass || '').toString().trim();
+          let groupEnd = groupStart + 1;
+          while (groupEnd < data.length) {
+            const nextClass = (data[groupEnd]['Kelas'] || selectedClass || '').toString().trim();
+            if (nextClass === currentClass) {
+              groupEnd++;
+            } else {
+              break;
+            }
+          }
+          const span = groupEnd - groupStart;
+          const rawVal = absentColIndex !== -1 ? data[groupStart][headers[absentColIndex]] : span;
+          const countText = rawVal !== undefined && rawVal !== null ? rawVal.toString() : `${span}`;
+          const formattedVal = countText.toLowerCase().includes('siswa') ? countText : `${countText} Siswa`;
+
+          const rawDate = dateColIndex !== -1 ? (data[groupStart][headers[dateColIndex]] || '').toString() : '';
+
+          rowSpans[groupStart] = { isFirst: true, span: span, countValue: formattedVal, dateValue: rawDate };
+          for (let k = groupStart + 1; k < groupEnd; k++) {
+            rowSpans[k] = { isFirst: false, span: 1, countValue: formattedVal, dateValue: rawDate };
+          }
+
+          groupStart = groupEnd;
+        }
+
+        const body = data.map((row, rowIndex) => {
+          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+          const rowArr: any[] = [];
+          const spanInfo = rowSpans[rowIndex];
+
+          headers.forEach((header, colIndex) => {
+            if (colIndex === absentColIndex && absentColIndex !== -1) {
+              if (spanInfo.isFirst) {
+                if (spanInfo.span > 1) {
+                  rowArr.push({
+                    content: spanInfo.countValue,
+                    rowSpan: spanInfo.span,
+                    styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' }
+                  });
+                } else {
+                  rowArr.push({
+                    content: spanInfo.countValue,
+                    styles: { halign: 'center', valign: 'middle', fontStyle: 'bold' }
+                  });
+                }
+              }
+              // If not isFirst, omit this column in the body array so autoTable reserves it for the rowSpan cell
+              return;
+            }
+
+            if (colIndex === dateColIndex && dateColIndex !== -1) {
+              if (spanInfo.isFirst) {
+                if (spanInfo.span > 1) {
+                  rowArr.push({
+                    content: spanInfo.dateValue,
+                    rowSpan: spanInfo.span,
+                    styles: { halign: 'center', valign: 'middle', fontStyle: 'normal' }
+                  });
+                } else {
+                  rowArr.push({
+                    content: spanInfo.dateValue,
+                    styles: { halign: 'center', valign: 'middle', fontStyle: 'normal' }
+                  });
+                }
+              }
+              // If not isFirst, omit this column in the body array so autoTable reserves it for the rowSpan cell
+              return;
+            }
+
+            const val = row[header];
+            rowArr.push(val !== undefined && val !== null ? val.toString() : '');
+          });
+
+          return rowArr;
+        });
 
         const autoTableOptions = {
           startY: tableStartY,
@@ -1114,14 +1447,15 @@ export default function ReportsView({
           theme: 'grid' as const,
           headStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: 'bold', halign: 'center', lineWidth: 0.2, lineColor: [0, 0, 0] },
           styles: { fontSize: 8, cellPadding: 2, lineWidth: 0.2, lineColor: [0, 0, 0], textColor: 0 },
-          columnStyles: {
-            /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-            2: { halign: 'left' } as any // Assuming index 2 is 'Nama Lengkap Siswa' always
-          },
           /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
           didParseCell: function(cellData: any) {
-            if (cellData.section === 'body' && cellData.column.index !== 2) {
-              cellData.cell.styles.halign = 'center';
+            if (cellData.section === 'body') {
+              cellData.cell.styles.valign = 'middle';
+              if (nameColIndex !== -1 && cellData.column.index === nameColIndex) {
+                cellData.cell.styles.halign = 'left';
+              } else {
+                cellData.cell.styles.halign = 'center';
+              }
             }
           }
         };
@@ -1205,7 +1539,7 @@ export default function ReportsView({
           const studentStats = classStudents.map(student => {
           let sakit = 0, izin = 0, alpa = 0;
           if (reportType === 'summary') {
-            const studentSessions = classSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+            const studentSessions = classSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
             studentSessions.forEach(session => {
               const status = session.records[student.id];
               if (status === 'Sakit') sakit++;
@@ -1213,7 +1547,7 @@ export default function ReportsView({
               if (status === 'Alpa') alpa++;
             });
           } else if (reportType === 'monthly') {
-            const studentMonthlySessions = monthlySessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+            const studentMonthlySessions = monthlySessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
             studentMonthlySessions.forEach(session => {
               const status = session.records[student.id];
               if (status === 'Sakit') sakit++;
@@ -1221,7 +1555,7 @@ export default function ReportsView({
               if (status === 'Alpa') alpa++;
             });
           } else if (reportType === 'custom') {
-            const studentRangeSessions = customRangeSessions.filter(s => selectedClass === 'all' ? s.className === student.class : true);
+            const studentRangeSessions = customRangeSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
             studentRangeSessions.forEach(session => {
               const status = session.records[student.id];
               if (status === 'Sakit') sakit++;
@@ -1231,7 +1565,7 @@ export default function ReportsView({
           } else {
             // daily
             const studentDailySessions = classSessions.filter(s => 
-              s.date === selectedDailyDate && (selectedClass === 'all' ? s.className === student.class : true)
+              s.date === selectedDailyDate && ((s.className || '').trim() === (student.class || '').trim())
             );
             const targetSession = studentDailySessions[studentDailySessions.length - 1];
             if (targetSession) {
@@ -1542,13 +1876,29 @@ export default function ReportsView({
                   <select 
                     className="w-full p-3 bg-slate-50 border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600 transition-colors font-medium text-slate-700"
                     value={reportType}
-                    onChange={(e) => setReportType(e.target.value as 'daily' | 'monthly' | 'custom' | 'summary')}
+                    onChange={(e) => setReportType(e.target.value as 'daily' | 'monthly' | 'custom' | 'summary' | 'today_absent')}
                   >
                     <option value="summary">Rekap Total Keseluruhan</option>
                     <option value="monthly">Rekap Bulanan</option>
                     <option value="custom">Rentang Tanggal (Kustom)</option>
                     <option value="daily">Harian (Berdasarkan Tanggal)</option>
+                    <option value="today_absent">🚨 Siswa Tidak Masuk (Pilih Tanggal)</option>
                   </select>
+                </div>
+              )}
+
+              {selectedClass && reportType === 'today_absent' && (
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                    <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                    Pilih Tanggal Tidak Masuk
+                  </label>
+                  <input 
+                    type="date" 
+                    className="w-full p-3 bg-slate-50 border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-100 focus:border-amber-600 transition-colors text-sm font-bold text-slate-800"
+                    value={selectedAbsentDate}
+                    onChange={(e) => setSelectedAbsentDate(e.target.value)}
+                  />
                 </div>
               )}
 
@@ -1765,13 +2115,14 @@ export default function ReportsView({
               <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">
-                    Preview Laporan {reportType === 'summary' ? 'Total' : reportType === 'monthly' ? 'Bulanan' : reportType === 'custom' ? 'Rentang Tanggal' : 'Harian'}
+                    Preview Laporan {reportType === 'summary' ? 'Total' : reportType === 'monthly' ? 'Bulanan' : reportType === 'custom' ? 'Rentang Tanggal' : reportType === 'today_absent' ? 'Siswa Tidak Masuk Hari Ini' : 'Harian'}
                   </h3>
                   <p className="text-slate-600 text-sm mt-1">
                     Kelas: <span className="font-bold text-slate-700">{selectedClass}</span> 
                     {reportType === 'monthly' && ` | Bulan: ${selectedMonth}`}
                     {reportType === 'custom' && startDate && endDate && ` | Rentang: ${format(parseISO(startDate), 'dd MMM yyyy', {locale: id})} - ${format(parseISO(endDate), 'dd MMM yyyy', {locale: id})}`}
-                    {reportType === 'daily' && selectedDailyDate && availableDailyDates.length > 0 && ` | Tanggal: ${format(parseISO(selectedDailyDate), 'dd MMMM yyyy', {locale: id})}`}
+                    {reportType === 'daily' && selectedDailyDate && availableDailyDates.length > 0 && ` | Tanggal: ${format(parseISO(selectedDailyDate), 'EEEE, dd MMMM yyyy', {locale: id})}`}
+                    {reportType === 'today_absent' && ` | Tanggal: ${format(parseISO(selectedAbsentDate || format(new Date(), 'yyyy-MM-dd')), 'EEEE, dd MMMM yyyy', {locale: id})}`}
                     {reportType === 'summary' && classSessions.length > 0 && ` | Tanggal: ${format(parseISO(classSessions[0].date), 'dd MMM yyyy', {locale: id})} - ${format(parseISO(classSessions[classSessions.length - 1].date), 'dd MMM yyyy', {locale: id})}`}
                   </p>
                 </div>
@@ -1855,6 +2206,24 @@ export default function ReportsView({
                 </div>
               )}
 
+              {reportType === 'today_absent' && (
+                <div className="px-6 py-3.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-semibold flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🚨</span>
+                    <span>Menampilkan khusus <strong>Siswa Tidak Masuk</strong> (Sakit, Izin, Alpa, atau Dispen) untuk tanggal <strong>{(() => {
+                      try {
+                        return format(parseISO(selectedAbsentDate || format(new Date(), 'yyyy-MM-dd')), 'dd MMMM yyyy', { locale: id });
+                      } catch {
+                        return selectedAbsentDate;
+                      }
+                    })()}</strong>.</span>
+                  </div>
+                  <span className="px-3 py-1 bg-amber-200/80 text-amber-950 font-bold rounded-lg text-xs shrink-0 shadow-2xs">
+                    {filteredStudents.length} Siswa Tidak Masuk
+                  </span>
+                </div>
+              )}
+
               {/* Filter & Pencarian Cepat Siswa */}
               <div className="p-4 sm:p-5 bg-white border-b border-slate-150 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="relative flex-1 max-w-md w-full">
@@ -1916,30 +2285,31 @@ export default function ReportsView({
                       {selectedClass === 'all' && (
                         <th className="p-4 font-bold text-slate-600 border-b border-slate-200">Kelas</th>
                       )}
-                      {(reportType === 'summary' || reportType === 'custom' || (reportType === 'monthly' && selectedClass === 'all')) && (
+                      {(reportType === 'summary' || reportType === 'custom' || reportType === 'monthly') && (
                         <>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200"><span className="text-emerald-700">Hadir</span></th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Sakit</th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Izin</th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200"><span className="text-rose-600">Alpa</span></th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Dispen</th>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Presentase %</th>
-                        </>
-                      )}
-                      {(reportType === 'monthly' && selectedClass !== 'all') && (
-                        <>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Hadir</th>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Sakit</th>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Izin</th>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200"><span className="text-rose-600">Alpa</span></th>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Dispen</th>
+                          <th className="p-4 font-bold text-rose-700 text-center border-b border-slate-200">Total Tidak Hadir Siswa</th>
+                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Keterangan Tidak Masuk</th>
+                          <th className="p-4 font-bold text-amber-800 text-center border-b border-slate-200">Jumlah yang tidak sekolah</th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Presentase %</th>
                         </>
                       )}
                       {reportType === 'daily' && (
                         <>
-                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Status Kehadiran</th>
+                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Keterangan Tidak Masuk</th>
+                          <th className="p-4 font-bold text-amber-800 text-center border-b border-slate-200">Jumlah yang tidak sekolah</th>
                           <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Presentase %</th>
+                        </>
+                      )}
+                      {reportType === 'today_absent' && (
+                        <>
+                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Keterangan Tidak Masuk</th>
+                          <th className="p-4 font-bold text-amber-800 text-center border-b border-slate-200">Jumlah yang tidak sekolah</th>
+                          <th className="p-4 font-bold text-slate-600 text-center border-b border-slate-200">Tanggal</th>
                         </>
                       )}
                       <th className="p-4 font-bold text-slate-600 border-b border-slate-200 text-center">Tindakan</th>
@@ -1948,14 +2318,28 @@ export default function ReportsView({
                   <tbody>
                     {paginatedStudents.length === 0 ? (
                       <tr>
-                        <td colSpan={selectedClass === 'all' ? 10 : 9} className="p-8 text-center text-slate-400 font-medium">
-                          Tidak ada data siswa yang cocok dengan filter.
+                        <td colSpan={selectedClass === 'all' ? 12 : 11} className="p-8 text-center text-slate-400 font-medium">
+                          Tidak ada data siswa {reportType === 'today_absent' ? 'yang tidak masuk pada tanggal ini' : 'yang cocok dengan filter'}.
                         </td>
                       </tr>
                     ) : (
                       paginatedStudents.map((student, idx) => {
                         const { hadir, sakit, izin, alpa, dispen, persentase, recentStatus, totalRecorded } = student.stats;
                         const globalIndex = (currentPage - 1) * pageSize + idx + 1;
+                        const studentAbsentTotal = sakit + izin + alpa + dispen;
+                        const classAbsentTotal = classAbsentCountMap[(student.class || '').trim()] || 0;
+
+                        // Calculate rowSpan for class grouping
+                        const isFirstInClassGroup = idx === 0 || paginatedStudents[idx].class !== paginatedStudents[idx - 1].class;
+                        let classRowSpan = 1;
+                        if (isFirstInClassGroup) {
+                          while (
+                            idx + classRowSpan < paginatedStudents.length &&
+                            paginatedStudents[idx + classRowSpan].class === student.class
+                          ) {
+                            classRowSpan++;
+                          }
+                        }
 
                         return (
                           <tr key={student.id} className="border-b last:border-b-0 border-slate-100 hover:bg-slate-50/50 transition-colors">
@@ -1977,29 +2361,42 @@ export default function ReportsView({
                               <div className="text-[10px] text-slate-400 font-mono mt-0.5">{student.nisn}</div>
                             </td>
                             {selectedClass === 'all' && (
-                              <td className="p-4 text-slate-600 font-bold text-xs">{student.class}</td>
+                              <td className="p-4 text-slate-600 font-medium text-xs">{student.class}</td>
                             )}
-                            {(reportType === 'summary' || reportType === 'custom' || (reportType === 'monthly' && selectedClass === 'all')) && (
+                            {(reportType === 'summary' || reportType === 'custom' || reportType === 'monthly') && (
                               <>
                                 <td className="p-4 text-center font-bold text-emerald-700 text-xs">{hadir}</td>
                                 <td className="p-4 text-center font-medium text-slate-600 text-xs">{sakit}</td>
                                 <td className="p-4 text-center font-medium text-slate-600 text-xs">{izin}</td>
                                 <td className="p-4 text-center font-bold text-rose-500 text-xs">{alpa}</td>
                                 <td className="p-4 text-center font-medium text-slate-600 text-xs">{dispen}</td>
-                                <td className="p-4 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${persentase >= 80 ? 'bg-emerald-100 text-lime-700' : persentase >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
-                                    {persentase.toFixed(2)}%
+                                <td className="p-4 text-center font-bold text-rose-700 text-xs">
+                                  <span className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md font-bold">
+                                    {studentAbsentTotal}
                                   </span>
                                 </td>
-                              </>
-                            )}
-                            {(reportType === 'monthly' && selectedClass !== 'all') && (
-                              <>
-                                <td className="p-4 text-center font-bold text-emerald-700 text-xs">{hadir}</td>
-                                <td className="p-4 text-center font-medium text-slate-600 text-xs">{sakit}</td>
-                                <td className="p-4 text-center font-medium text-slate-600 text-xs">{izin}</td>
-                                <td className="p-4 text-center font-bold text-rose-500 text-xs">{alpa}</td>
-                                <td className="p-4 text-center font-medium text-slate-600 text-xs">{dispen}</td>
+                                <td className="p-4 text-center font-medium text-slate-600 text-xs whitespace-nowrap">
+                                  {(() => {
+                                    const ketArr = [];
+                                    if (sakit > 0) ketArr.push(`Sakit (${sakit})`);
+                                    if (izin > 0) ketArr.push(`Izin (${izin})`);
+                                    if (alpa > 0) ketArr.push(`Alpa (${alpa})`);
+                                    if (dispen > 0) ketArr.push(`Dispen (${dispen})`);
+                                    return ketArr.length > 0 ? ketArr.join(', ') : '-';
+                                  })()}
+                                </td>
+                                {isFirstInClassGroup ? (
+                                  <td rowSpan={classRowSpan} className="p-4 text-center font-medium text-amber-900 text-xs bg-amber-50/60 border-x border-amber-200/80 align-middle">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span className="px-3 py-1 bg-amber-100 text-amber-950 border border-amber-300 rounded-lg font-medium text-xs inline-block">
+                                        {classAbsentTotal} Siswa
+                                      </span>
+                                      {classRowSpan > 1 && (
+                                        <span className="text-[10px] text-amber-700/80 font-medium">({classRowSpan} baris)</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                ) : null}
                                 <td className="p-4 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${persentase >= 80 ? 'bg-emerald-100 text-lime-700' : persentase >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
                                     {persentase.toFixed(2)}%
@@ -2018,6 +2415,15 @@ export default function ReportsView({
                                     {recentStatus || '-'}
                                   </span>
                                 </td>
+                                {isFirstInClassGroup ? (
+                                  <td rowSpan={classRowSpan} className="p-4 text-center font-medium text-amber-900 text-xs bg-amber-50/60 border-x border-amber-200/80 align-middle">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span className="px-3 py-1 bg-amber-100 text-amber-950 border border-amber-300 rounded-lg font-medium text-xs inline-block">
+                                        {classAbsentTotal} Siswa
+                                      </span>
+                                    </div>
+                                  </td>
+                                ) : null}
                                 <td className="p-4 text-center">
                                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${persentase >= 80 ? 'bg-emerald-100 text-lime-700' : persentase >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
                                     {persentase.toFixed(2)}%
@@ -2025,21 +2431,81 @@ export default function ReportsView({
                                 </td>
                               </>
                             )}
+                            {reportType === 'today_absent' && (
+                              <>
+                                <td className="p-4 text-center">
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold inline-block
+                                    ${recentStatus === 'Sakit' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 
+                                      recentStatus === 'Izin' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 
+                                      recentStatus === 'Alpa' ? 'bg-rose-100 text-rose-700 border border-rose-200' : 
+                                      recentStatus === 'Dispen' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-500'}
+                                  `}>
+                                    {recentStatus || '-'}
+                                  </span>
+                                </td>
+                                {isFirstInClassGroup ? (
+                                  <td rowSpan={classRowSpan} className="p-4 text-center font-medium text-amber-900 text-xs bg-amber-50/70 border-x border-amber-200/80 align-middle">
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                      <span className="px-3 py-1.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-medium shadow-2xs inline-block">
+                                        {classAbsentTotal} Siswa
+                                      </span>
+                                      {classRowSpan > 1 && (
+                                        <span className="text-[10px] font-medium text-amber-700/80">({classRowSpan} siswa)</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                ) : null}
+                                {isFirstInClassGroup ? (
+                                  <td rowSpan={classRowSpan} className="p-4 text-center font-medium text-slate-600 text-xs align-middle border-l border-slate-100/80 bg-slate-50/40">
+                                    {(() => {
+                                      try {
+                                        return format(parseISO(selectedAbsentDate || format(new Date(), 'yyyy-MM-dd')), 'EEEE, dd/MM/yyyy', { locale: id });
+                                      } catch {
+                                        return selectedAbsentDate;
+                                      }
+                                    })()}
+                                  </td>
+                                ) : null}
+                              </>
+                            )}
                             <td className="p-4 text-center">
                               <button
                                 onClick={() => {
+                                  const studentAbsentCount = (sakit || 0) + (izin || 0) + (alpa || 0) + (dispen || 0);
                                   setSelectedStudentForCall({
                                     id: student.id,
                                     name: student.name,
                                     nisn: student.nisn || '-',
                                     class: student.class || selectedClass,
-                                    alpa: alpa,
-                                    sakit: sakit,
-                                    izin: izin,
-                                    persentase: persentase,
+                                    hadir: hadir || 0,
+                                    sakit: sakit || 0,
+                                    izin: izin || 0,
+                                    alpa: alpa || 0,
+                                    dispen: dispen || 0,
+                                    total: totalRecorded || ((hadir || 0) + studentAbsentCount),
+                                    totalTidakHadir: studentAbsentCount,
+                                    rate: Number(persentase.toFixed(1)),
+                                    persentase: Number(persentase.toFixed(1)),
                                     datesAlpa: classSessions
                                       .filter(s => s.records[student.id] === 'Alpa')
-                                      .map(s => format(parseISO(s.date), 'dd/MM/yyyy'))
+                                      .map(s => {
+                                        try { return format(parseISO(s.date), 'dd/MM/yyyy'); } catch { return s.date; }
+                                      }),
+                                    datesSakit: classSessions
+                                      .filter(s => s.records[student.id] === 'Sakit')
+                                      .map(s => {
+                                        try { return format(parseISO(s.date), 'dd/MM/yyyy'); } catch { return s.date; }
+                                      }),
+                                    datesIzin: classSessions
+                                      .filter(s => s.records[student.id] === 'Izin')
+                                      .map(s => {
+                                        try { return format(parseISO(s.date), 'dd/MM/yyyy'); } catch { return s.date; }
+                                      }),
+                                    datesDispen: classSessions
+                                      .filter(s => s.records[student.id] === 'Dispen')
+                                      .map(s => {
+                                        try { return format(parseISO(s.date), 'dd/MM/yyyy'); } catch { return s.date; }
+                                      })
                                   });
                                   setIsCallModalOpen(true);
                                 }}
@@ -2055,6 +2521,34 @@ export default function ReportsView({
                       })
                     )}
                   </tbody>
+                  {paginatedStudents.length > 0 && (
+                    <tfoot className="bg-slate-100/90 border-t-2 border-slate-300 font-bold text-slate-800">
+                      <tr>
+                        <td colSpan={selectedClass === 'all' ? 3 : 2} className="p-4 text-right uppercase tracking-wider text-xs">
+                          {reportType === 'today_absent' ? (
+                            <div className="flex items-center justify-end gap-2 text-rose-700 font-black">
+                              <span className="text-base">🚨</span>
+                              <span>TOTAL SISWA TIDAK MASUK ({(() => {
+                                try {
+                                  return format(parseISO(selectedAbsentDate || format(new Date(), 'yyyy-MM-dd')), 'dd MMMM yyyy', { locale: id });
+                                } catch {
+                                  return selectedAbsentDate;
+                                }
+                              })()}):</span>
+                            </div>
+                          ) : (
+                            <span>TOTAL SISWA TERFILTER:</span>
+                          )}
+                        </td>
+                        <td colSpan={reportType === 'today_absent' ? 2 : 1} className="p-4 text-center">
+                          <span className="px-4 py-1.5 bg-rose-600 text-white font-black text-xs rounded-xl shadow-xs inline-block">
+                            {filteredStudents.length} Siswa
+                          </span>
+                        </td>
+                        <td colSpan={reportType === 'today_absent' ? 2 : 3} className="p-4"></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 
@@ -2369,6 +2863,20 @@ export default function ReportsView({
           setSelectedStudentForCall(null);
         }}
         student={selectedStudentForCall}
+        stats={selectedStudentForCall ? {
+          hadir: selectedStudentForCall.hadir ?? 0,
+          sakit: selectedStudentForCall.sakit ?? 0,
+          izin: selectedStudentForCall.izin ?? 0,
+          alpa: selectedStudentForCall.alpa ?? 0,
+          dispen: selectedStudentForCall.dispen ?? 0,
+          total: selectedStudentForCall.total ?? 0,
+          totalTidakHadir: selectedStudentForCall.totalTidakHadir ?? 0,
+          rate: selectedStudentForCall.rate ?? 0,
+          datesAlpa: selectedStudentForCall.datesAlpa || [],
+          datesSakit: selectedStudentForCall.datesSakit || [],
+          datesIzin: selectedStudentForCall.datesIzin || [],
+          datesDispen: selectedStudentForCall.datesDispen || []
+        } : undefined}
         profileData={profileData}
       />
     </div>

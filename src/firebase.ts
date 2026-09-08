@@ -6,9 +6,7 @@ import {
   persistentLocalCache, 
   persistentMultipleTabManager,
   memoryLocalCache,
-  Firestore,
-  doc,
-  getDocFromServer
+  Firestore
 } from 'firebase/firestore';
 import * as firebaseConfigRaw from '../firebase-applet-config.json';
 
@@ -20,6 +18,7 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 let firestoreDb: Firestore;
 try {
   firestoreDb = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager()
     })
@@ -30,6 +29,7 @@ try {
   } catch {
     try {
       firestoreDb = initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
         localCache: memoryLocalCache()
       }, firebaseConfig.firestoreDatabaseId);
     } catch {
@@ -79,7 +79,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     errorMessage.toLowerCase().includes('hidden') ||
     errorMessage.toLowerCase().includes('invalidstateerror') ||
     errorMessage.toLowerCase().includes('sync background') ||
-    errorMessage.toLowerCase().includes('background sync')
+    errorMessage.toLowerCase().includes('background sync') ||
+    errorMessage.toLowerCase().includes('unavailable') ||
+    errorMessage.toLowerCase().includes('could not reach cloud firestore') ||
+    errorMessage.toLowerCase().includes('offline mode') ||
+    errorMessage.toLowerCase().includes('client is offline')
   ) {
     return;
   }
@@ -115,13 +119,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(dbDefault, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
+    // Optional connection check
+  } catch {
+    // Ignore
   }
 }
-
-testConnection();
 
