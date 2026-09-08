@@ -905,22 +905,32 @@ export default function ReportsView({
         const totalRecorded = hadir + sakit + izin + alpa + dispen;
         const presentPercentage = totalRecorded > 0 ? Math.round(((hadir + dispen) / totalRecorded) * 100) : 0;
 
-        const row: Record<string, string | number | boolean> = {
-          'No': i + 1,
-          'NISN': student.nisn,
-          'Nama Lengkap Siswa': student.name
-        };
-        
-        if (selectedClass === 'all') {
-          row['Kelas'] = student.class;
+        if (selectedClass !== 'all') {
+          return {
+            'No': i + 1,
+            'NIS': student.nisn || student.nis || '-',
+            'Nama Lengkap Siswa': student.name,
+            'Hadir': hadir,
+            'Sakit': sakit,
+            'Izin': izin,
+            'Alpa': alpa,
+            'Dispen': dispen,
+            'Presentase': `${presentPercentage}%`
+          };
         }
 
-        row['Hadir'] = hadir;
-        row['Sakit'] = sakit;
-        row['Izin'] = izin;
-        row['Alpa'] = alpa;
-        row['Dispen'] = dispen;
-        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const row: Record<string, string | number | boolean> = {
+          'No': i + 1,
+          'NISN': student.nisn || '-',
+          'Nama Lengkap Siswa': student.name,
+          'Kelas': student.class,
+          'Hadir': hadir,
+          'Sakit': sakit,
+          'Izin': izin,
+          'Alpa': alpa,
+          'Dispen': dispen,
+          'Total Tidak Hadir Siswa': sakit + izin + alpa + dispen
+        };
         const ketArr = [];
         if (sakit > 0) ketArr.push("Sakit");
         if (izin > 0) ketArr.push("Izin");
@@ -928,7 +938,7 @@ export default function ReportsView({
         if (dispen > 0) ketArr.push("Dispen");
         row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
         row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
-        row['Presentase %'] = presentPercentage;
+        row['Presentase %'] = `${presentPercentage}%`;
 
         return row;
       });
@@ -936,16 +946,6 @@ export default function ReportsView({
       sheetName = 'Rekap Total';
     } else if (reportType === 'monthly') {
       data = classStudents.map((student, i) => {
-        const row: Record<string, string | number | boolean> = {
-          'No': i + 1,
-          'NISN': student.nisn,
-          'Nama Lengkap Siswa': student.name
-        };
-        
-        if (selectedClass === 'all') {
-          row['Kelas'] = student.class;
-        }
-
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
         const studentMonthlySessions = monthlySessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
 
@@ -961,12 +961,35 @@ export default function ReportsView({
           }
         });
 
-        row['Hadir'] = hadir;
-        row['Sakit'] = sakit;
-        row['Izin'] = izin;
-        row['Alpa'] = alpa;
-        row['Dispen'] = dispen;
-        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const totalRecordedMonthly = hadir + sakit + izin + alpa + dispen;
+        const presentPercentage = totalRecordedMonthly > 0 ? Math.round(((hadir + dispen) / totalRecordedMonthly) * 100) : 0;
+
+        if (selectedClass !== 'all') {
+          return {
+            'No': i + 1,
+            'NIS': student.nisn || student.nis || '-',
+            'Nama Lengkap Siswa': student.name,
+            'Hadir': hadir,
+            'Sakit': sakit,
+            'Izin': izin,
+            'Alpa': alpa,
+            'Dispen': dispen,
+            'Presentase': `${presentPercentage}%`
+          };
+        }
+
+        const row: Record<string, string | number | boolean> = {
+          'No': i + 1,
+          'NISN': student.nisn || '-',
+          'Nama Lengkap Siswa': student.name,
+          'Kelas': student.class,
+          'Hadir': hadir,
+          'Sakit': sakit,
+          'Izin': izin,
+          'Alpa': alpa,
+          'Dispen': dispen,
+          'Total Tidak Hadir Siswa': sakit + izin + alpa + dispen
+        };
         const ketArr = [];
         if (sakit > 0) ketArr.push("Sakit");
         if (izin > 0) ketArr.push("Izin");
@@ -974,10 +997,7 @@ export default function ReportsView({
         if (dispen > 0) ketArr.push("Dispen");
         row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
         row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
-        
-        const totalRecordedMonthly = hadir + sakit + izin + alpa + dispen;
-        const presentPercentage = totalRecordedMonthly > 0 ? Math.round(((hadir + dispen) / totalRecordedMonthly) * 100) : 0;
-        row['Presentase %'] = presentPercentage;
+        row['Presentase %'] = `${presentPercentage}%`;
 
         return row;
       });
@@ -985,16 +1005,6 @@ export default function ReportsView({
       sheetName = `Bulan_${selectedMonth}`;
     } else if (reportType === 'custom') {
       data = classStudents.map((student, i) => {
-        const row: Record<string, string | number | boolean> = {
-          'No': i + 1,
-          'NISN': student.nisn,
-          'Nama Lengkap Siswa': student.name
-        };
-        
-        if (selectedClass === 'all') {
-          row['Kelas'] = student.class;
-        }
-
         let hadir = 0, sakit = 0, izin = 0, alpa = 0, dispen = 0;
         const studentRangeSessions = customRangeSessions.filter(s => (s.className || '').trim() === (student.class || '').trim());
 
@@ -1010,12 +1020,35 @@ export default function ReportsView({
           }
         });
 
-        row['Hadir'] = hadir;
-        row['Sakit'] = sakit;
-        row['Izin'] = izin;
-        row['Alpa'] = alpa;
-        row['Dispen'] = dispen;
-        row['Total Tidak Hadir Siswa'] = sakit + izin + alpa + dispen;
+        const totalRecordedRange = hadir + sakit + izin + alpa + dispen;
+        const presentPercentage = totalRecordedRange > 0 ? Math.round(((hadir + dispen) / totalRecordedRange) * 100) : 0;
+
+        if (selectedClass !== 'all') {
+          return {
+            'No': i + 1,
+            'NIS': student.nisn || student.nis || '-',
+            'Nama Lengkap Siswa': student.name,
+            'Hadir': hadir,
+            'Sakit': sakit,
+            'Izin': izin,
+            'Alpa': alpa,
+            'Dispen': dispen,
+            'Presentase': `${presentPercentage}%`
+          };
+        }
+
+        const row: Record<string, string | number | boolean> = {
+          'No': i + 1,
+          'NISN': student.nisn || '-',
+          'Nama Lengkap Siswa': student.name,
+          'Kelas': student.class,
+          'Hadir': hadir,
+          'Sakit': sakit,
+          'Izin': izin,
+          'Alpa': alpa,
+          'Dispen': dispen,
+          'Total Tidak Hadir Siswa': sakit + izin + alpa + dispen
+        };
         const ketArr = [];
         if (sakit > 0) ketArr.push("Sakit");
         if (izin > 0) ketArr.push("Izin");
@@ -1023,10 +1056,7 @@ export default function ReportsView({
         if (dispen > 0) ketArr.push("Dispen");
         row["Keterangan Tidak Masuk"] = ketArr.length > 0 ? ketArr.join(", ") : "Hadir";
         row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
-        
-        const totalRecordedRange = hadir + sakit + izin + alpa + dispen;
-        const presentPercentage = totalRecordedRange > 0 ? Math.round(((hadir + dispen) / totalRecordedRange) * 100) : 0;
-        row['Presentase %'] = presentPercentage;
+        row['Presentase %'] = `${presentPercentage}%`;
 
         return row;
       });
@@ -1079,7 +1109,7 @@ export default function ReportsView({
 
         const row: Record<string, string | number | boolean> = {
           'No': i + 1,
-          'NISN': student.nisn || '-',
+          'NISN': student.nisn || student.nis || '-',
           'Nama Lengkap Siswa': student.name,
           'Kelas': student.class,
           'Keterangan Tidak Masuk': status,
@@ -1132,19 +1162,29 @@ export default function ReportsView({
         const totalRecordedDaily = hadir + sakit + izin + alpa + dispen;
         const presentPercentage = totalRecordedDaily > 0 ? Math.round(((hadir + dispen) / totalRecordedDaily) * 100) : 0;
 
-        const row: Record<string, string | number | boolean> = {
-          'No': i + 1,
-          'NISN': student.nisn,
-          'Nama Lengkap Siswa': student.name
-        };
-
-        if (selectedClass === 'all') {
-          row['Kelas'] = student.class;
+        if (selectedClass !== 'all') {
+          return {
+            'No': i + 1,
+            'NIS': student.nisn || student.nis || '-',
+            'Nama Lengkap Siswa': student.name,
+            'Hadir': sHadir,
+            'Sakit': sSakit,
+            'Izin': sIzin,
+            'Alpa': sAlpa,
+            'Dispen': sDispen,
+            'Presentase': `${presentPercentage}%`
+          };
         }
 
-        row['Keterangan Tidak Masuk'] = foundStatus;
-        row['Jumlah yang tidak sekolah'] = classAbsentCountMap[(student.class || '').trim()] || 0;
-        row['Presentase %'] = presentPercentage;
+        const row: Record<string, string | number | boolean> = {
+          'No': i + 1,
+          'NISN': student.nisn || '-',
+          'Nama Lengkap Siswa': student.name,
+          'Kelas': student.class,
+          'Keterangan Tidak Masuk': foundStatus,
+          'Jumlah yang tidak sekolah': classAbsentCountMap[(student.class || '').trim()] || 0,
+          'Presentase %': `${presentPercentage}%`
+        };
 
         return row;
       });
@@ -1214,29 +1254,29 @@ export default function ReportsView({
         doc.setFont("helvetica", "bold");
         doc.text('LAPORAN REKAPITULASI KEHADIRAN SISWA', pageWidth / 2, startY, { align: 'center' });
         
-        doc.setFontSize(10.5);
+        doc.setFontSize(9.5);
         doc.setFont("helvetica", "normal");
         // Two-Column Symmetrical Header Layout (Row 1, Row 2, Row 3)
         const leftLabelX = 14;
-        const leftColonX = 64;
-        const leftValX = 67;
+        const leftColonX = 50;
+        const leftValX = 53;
 
-        const rightLabelX = isLandscape ? pageWidth - 105 : pageWidth - 85;
-        const rightColonX = rightLabelX + 33;
+        const rightLabelX = isLandscape ? pageWidth - 105 : 132;
+        const rightColonX = isLandscape ? rightLabelX + 30 : 160;
         const rightValX = rightColonX + 3;
 
         const row1Y = startY + 8;
         const row2Y = startY + 14;
         const row3Y = startY + 20;
 
-        // Row 1: Left column header (Wali Kelas / Total Siswa Tidak Masuk / Koordinator Piket) | Tahun Pelajaran (Right)
+        // Row 1: Left column header (Wali Kelas / Siswa Tidak Masuk) | Tahun Pelajaran (Right)
         let labelMapel: string;
         let valueMapel: string;
         if (reportType === 'today_absent') {
-          labelMapel = 'Total Siswa Tidak Masuk';
+          labelMapel = 'Siswa Tidak Masuk';
           valueMapel = `${data.length} Siswa`;
         } else if (reportType === 'daily') {
-          labelMapel = 'Total Siswa Tidak Masuk';
+          labelMapel = 'Siswa Tidak Masuk';
           const absentCount = data.filter((row: Record<string, unknown>) => {
             const ket = (row['Keterangan Tidak Masuk'] || '').toString();
             return ket && ket !== 'Hadir' && ket !== '-';
@@ -1246,7 +1286,7 @@ export default function ReportsView({
           labelMapel = 'Wali Kelas';
           valueMapel = customWaliKelasName || '-';
         } else {
-          labelMapel = 'Total Siswa Tidak Masuk';
+          labelMapel = 'Siswa Tidak Masuk';
           const absentCount = data.filter((row: Record<string, unknown>) => {
             const ket = (row['Keterangan Tidak Masuk'] || '').toString();
             return ket && ket !== 'Hadir' && ket !== '-';
@@ -1440,6 +1480,7 @@ export default function ReportsView({
           return rowArr;
         });
 
+        const isPerClass = selectedClass !== 'all';
         const autoTableOptions = {
           startY: tableStartY,
           head: [headers],
@@ -1447,6 +1488,17 @@ export default function ReportsView({
           theme: 'grid' as const,
           headStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: 'bold', halign: 'center', lineWidth: 0.2, lineColor: [0, 0, 0] },
           styles: { fontSize: 8, cellPadding: 2, lineWidth: 0.2, lineColor: [0, 0, 0], textColor: 0 },
+          columnStyles: isPerClass ? {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 26, halign: 'center' },
+            2: { halign: 'left' },
+            3: { cellWidth: 14, halign: 'center' },
+            4: { cellWidth: 14, halign: 'center' },
+            5: { cellWidth: 14, halign: 'center' },
+            6: { cellWidth: 14, halign: 'center' },
+            7: { cellWidth: 14, halign: 'center' },
+            8: { cellWidth: 20, halign: 'center' }
+          } : undefined,
           /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
           didParseCell: function(cellData: any) {
             if (cellData.section === 'body') {
